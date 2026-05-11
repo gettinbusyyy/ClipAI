@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipAI</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d0f14;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 48px 16px 80px;
+    }
+
+    .container { width: 100%; max-width: 680px; }
+
+    /* Header */
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 40px;
+    }
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .logo h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+    .logo span { color: #8b5cf6; }
+
+    /* Card */
+    .card {
+      background: #161a24;
+      border: 1px solid #252a38;
+      border-radius: 16px;
+      padding: 32px;
+      margin-bottom: 24px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+
+    input[type="url"], select {
+      width: 100%;
+      background: #0d0f14;
+      border: 1px solid #252a38;
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: 1rem;       /* ≥16 px prevents iOS Safari auto-zoom on focus */
+      padding: 12px 16px;
+      outline: none;
+      transition: border-color 0.15s;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+    input[type="url"]:focus, select:focus { border-color: #6366f1; }
+    input[type="url"]::placeholder { color: #4a5568; }
+
+    .field { margin-bottom: 20px; }
+
+    .select-wrap { position: relative; }
+    .select-wrap::after {
+      content: "▾";
+      position: absolute;
+      right: 14px; top: 50%;
+      transform: translateY(-50%);
+      color: #6b7280;
+      pointer-events: none;
+      font-size: 0.85rem;
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 14px;
+      transition: opacity 0.15s, transform 0.1s;
+      margin-top: 4px;
+    }
+    button[type="submit"]:hover { opacity: 0.9; }
+    button[type="submit"]:active { transform: scale(0.99); }
+    button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Progress */
+    #progress-card { display: none; }
+
+    .steps {
+      display: flex;
+      gap: 0;
+      margin-bottom: 28px;
+      position: relative;
+    }
+    .steps::before {
+      content: "";
+      position: absolute;
+      top: 18px; left: 18px; right: 18px;
+      height: 2px;
+      background: #252a38;
+      z-index: 0;
+    }
+    .step-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+      z-index: 1;
+    }
+    .step-circle {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: #1e2435;
+      border: 2px solid #252a38;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #4a5568;
+      transition: all 0.3s;
+    }
+    .step-label {
+      font-size: 0.72rem;
+      color: #4a5568;
+      text-align: center;
+      font-weight: 500;
+      transition: color 0.3s;
+    }
+
+    .step-item.active .step-circle {
+      background: #1e1b4b;
+      border-color: #6366f1;
+      color: #6366f1;
+    }
+    .step-item.active .step-label { color: #a5b4fc; }
+
+    .step-item.done .step-circle {
+      background: #6366f1;
+      border-color: #6366f1;
+      color: #fff;
+    }
+    .step-item.done .step-label { color: #6366f1; }
+
+    .progress-bar-wrap {
+      background: #0d0f14;
+      border-radius: 99px;
+      height: 6px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .progress-bar {
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+
+    .status-msg {
+      font-size: 0.88rem;
+      color: #94a3b8;
+      text-align: center;
+      min-height: 22px;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #252a38;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Error banner */
+    .error-banner {
+      background: #2d0f0f;
+      border: 1px solid #7f1d1d;
+      border-radius: 10px;
+      color: #fca5a5;
+      font-size: 0.85rem;
+      padding: 14px 16px;
+      margin-top: 16px;
+      display: none;
+      word-break: break-word;
+    }
+
+    /* Results */
+    #results-card { display: none; }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .results-header h2 { font-size: 1rem; font-weight: 700; }
+    .badge {
+      background: #1e1b4b;
+      color: #a5b4fc;
+      border-radius: 99px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 3px 10px;
+    }
+
+    .clip-card {
+      background: #0d0f14;
+      border: 1px solid #252a38;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 14px;
+    }
+    .clip-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .clip-num {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #6366f1;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+    .clip-title {
+      font-size: 0.98rem;
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+    .score-pill {
+      flex-shrink: 0;
+      background: #1a2e1a;
+      border: 1px solid #166534;
+      border-radius: 99px;
+      color: #4ade80;
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 4px 12px;
+      white-space: nowrap;
+    }
+    .clip-hook {
+      font-size: 0.83rem;
+      color: #a5b4fc;
+      font-style: italic;
+      margin-bottom: 8px;
+    }
+    .clip-reason {
+      font-size: 0.82rem;
+      color: #64748b;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: #1e1b4b;
+      border: 1px solid #3730a3;
+      border-radius: 8px;
+      color: #a5b4fc;
+      cursor: pointer;
+      font-size: 0.83rem;
+      font-weight: 600;
+      padding: 9px 16px;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+    .download-btn:hover { background: #312e81; color: #c7d2fe; }
+    .download-btn svg { flex-shrink: 0; }
+
+    .corrupt-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #2d0f0f;
+      border: 1px solid #7f1d1d;
+      border-radius: 8px;
+      color: #fca5a5;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 9px 14px;
+    }
+
+    .again-btn {
+      display: block;
+      text-align: center;
+      background: none;
+      border: 1px solid #252a38;
+      border-radius: 10px;
+      color: #64748b;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 12px;
+      width: 100%;
+      margin-top: 8px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .again-btn:hover { border-color: #6366f1; color: #a5b4fc; }
+
+    /* ── Clip thumbnail ── */
+    .clip-thumb {
+      width: 100%;
+      display: block;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: #1e2435;
+    }
+
+    /* ── Clip action row ── */
+    .clip-action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .edit-caps-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #12162a;
+      border: 1px solid #3730a3;
+      border-radius: 8px;
+      color: #818cf8;
+      cursor: pointer;
+      font-size: 0.83rem;
+      font-weight: 600;
+      padding: 9px 14px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .edit-caps-btn:hover { background: #1e1b4b; color: #a5b4fc; }
+    .edit-caps-btn.open   { background: #1e1b4b; border-color: #6366f1; color: #c7d2fe; }
+
+    /* ── Caption editor panel ── */
+    .caption-editor {
+      margin-top: 16px;
+      border-top: 1px solid #1e2435;
+      padding-top: 16px;
+    }
+
+    .caption-blocks-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #4a5568;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 10px;
+    }
+
+    .caption-blocks-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-bottom: 14px;
+      padding-right: 2px;
+    }
+    .caption-blocks-list::-webkit-scrollbar { width: 4px; }
+    .caption-blocks-list::-webkit-scrollbar-track { background: transparent; }
+    .caption-blocks-list::-webkit-scrollbar-thumb { background: #252a38; border-radius: 4px; }
+
+    .caption-block {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .caption-ts {
+      font-size: 0.7rem;
+      color: #4a5568;
+      font-family: "SF Mono", "Fira Code", monospace;
+      white-space: nowrap;
+      min-width: 76px;
+      flex-shrink: 0;
+    }
+
+    .caption-input {
+      flex: 1;
+      background: #0d0f14;
+      border: 1px solid #252a38;
+      border-radius: 7px;
+      color: #e2e8f0;
+      font-size: 0.88rem;
+      padding: 7px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+      min-width: 0;
+    }
+    .caption-input:focus { border-color: #6366f1; }
+
+    .caption-editor-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .burn-btn {
+      flex: 1;
+      min-width: 160px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 11px 16px;
+      transition: opacity 0.15s;
+    }
+    .burn-btn:hover    { opacity: 0.88; }
+    .burn-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .cancel-edit-btn {
+      background: none;
+      border: 1px solid #252a38;
+      border-radius: 8px;
+      color: #64748b;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 11px 14px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .cancel-edit-btn:hover { border-color: #6366f1; color: #a5b4fc; }
+
+    .burn-status {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+
+    /* ── Mobile ─────────────────────────────────────────────────────────── */
+    @media (max-width: 480px) {
+      body {
+        padding: 20px 12px 56px;
+      }
+
+      .logo {
+        margin-bottom: 24px;
+      }
+
+      .card {
+        padding: 18px 16px;
+        border-radius: 14px;
+      }
+
+      .clip-card {
+        padding: 16px;
+      }
+
+      /* Prevent iOS auto-zoom on caption inputs (font must be ≥16 px) */
+      .caption-input {
+        font-size: 1rem;
+      }
+
+      /* 44 px minimum touch targets for all tappable controls */
+      .download-btn,
+      .edit-caps-btn {
+        min-height: 44px;
+        padding: 11px 16px;
+      }
+      .burn-btn,
+      .cancel-edit-btn,
+      .again-btn {
+        min-height: 44px;
+      }
+
+      /* Clip action buttons: full-width vertical stack */
+      .clip-action-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .download-btn,
+      .edit-caps-btn {
+        justify-content: center;
+      }
+
+      /* Caption editor action buttons: full-width vertical stack */
+      .caption-editor-actions {
+        flex-direction: column;
+      }
+      .burn-btn {
+        min-width: 0;
+      }
+      .cancel-edit-btn {
+        flex: none;
+      }
+
+      /* Shorter caption scroll area so buttons stay visible */
+      .caption-blocks-list {
+        max-height: 200px;
+      }
+
+      /* Keep timestamp readable but tighten on narrow width */
+      .caption-ts {
+        min-width: 64px;
+        font-size: 0.68rem;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="logo">
+    <div class="logo-icon">✂</div>
+    <h1>Clip<span>AI</span></h1>
+  </div>
+
+  <!-- Form card -->
+  <div class="card" id="form-card">
+    <form id="clip-form">
+      <div class="field">
+        <label for="url">YouTube URL</label>
+        <input
+          type="url"
+          id="url"
+          name="url"
+          placeholder="https://www.youtube.com/watch?v=..."
+          required
+        />
+      </div>
+      <div class="field">
+        <label for="niche">Niche</label>
+        <div class="select-wrap">
+          <select id="niche" name="niche">
+            {% for key, name in niches.items() %}
+            <option value="{{ name }}">{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="count">Clips to generate</label>
+        <div class="select-wrap">
+          <select id="count" name="count">
+            <option value="3" selected>3 clips</option>
+            <option value="5">5 clips</option>
+            <option value="10">10 clips</option>
+            <option value="15">15 clips</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit" id="submit-btn">Generate Clips</button>
+    </form>
+  </div>
+
+  <!-- Progress card -->
+  <div class="card" id="progress-card">
+    <div class="steps">
+      <div class="step-item" id="s1">
+        <div class="step-circle">1</div>
+        <div class="step-label">Transcribe</div>
+      </div>
+      <div class="step-item" id="s2">
+        <div class="step-circle">2</div>
+        <div class="step-label">AI Score</div>
+      </div>
+      <div class="step-item" id="s3">
+        <div class="step-circle">3</div>
+        <div class="step-label">Cut Clips</div>
+      </div>
+    </div>
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+
+    <p class="status-msg" id="status-msg">
+      <span class="spinner"></span>
+      <span id="status-text">Starting...</span>
+    </p>
+
+    <div class="error-banner" id="error-banner"></div>
+  </div>
+
+  <!-- Results card -->
+  <div class="card" id="results-card">
+    <div class="results-header">
+      <h2>Top Clips</h2>
+      <span class="badge" id="results-badge">3 clips</span>
+    </div>
+    <div id="clips-list"></div>
+    <button class="again-btn" id="again-btn">+ Generate from another video</button>
+  </div>
+
+</div>
+
+<script>
+  const form = document.getElementById("clip-form");
+  const submitBtn = document.getElementById("submit-btn");
+  const formCard = document.getElementById("form-card");
+  const progressCard = document.getElementById("progress-card");
+  const resultsCard = document.getElementById("results-card");
+  const progressBar = document.getElementById("progress-bar");
+  const statusText = document.getElementById("status-text");
+  const errorBanner = document.getElementById("error-banner");
+  const clipsList = document.getElementById("clips-list");
+  const resultsBadge = document.getElementById("results-badge");
+  const againBtn = document.getElementById("again-btn");
+
+  const stepEls = [
+    document.getElementById("s1"),
+    document.getElementById("s2"),
+    document.getElementById("s3"),
+  ];
+
+  let pollTimer = null;
+
+  const STEP_PROGRESS = { 0: 4, 1: 30, 2: 60, 3: 85, 4: 100 };
+
+  function setSteps(currentStep) {
+    stepEls.forEach((el, i) => {
+      const stepNum = i + 1;
+      el.classList.remove("active", "done");
+      if (stepNum < currentStep) el.classList.add("done");
+      else if (stepNum === currentStep) el.classList.add("active");
+    });
+  }
+
+  function showProgress(message, step) {
+    progressCard.style.display = "block";
+    statusText.textContent = message;
+    const pct = STEP_PROGRESS[step] ?? 4;
+    progressBar.style.width = pct + "%";
+    setSteps(step);
+  }
+
+  function showError(msg) {
+    errorBanner.style.display = "block";
+    errorBanner.textContent = "Error: " + msg;
+    document.querySelector(".spinner").style.display = "none";
+    statusText.textContent = "Something went wrong.";
+    submitBtn.disabled = false;
+    if (pollTimer) clearInterval(pollTimer);
+  }
+
+  function renderClips(clips, jobId) {
+    clipsList.innerHTML = "";
+    resultsBadge.textContent = clips.length + " clip" + (clips.length !== 1 ? "s" : "");
+
+    clips.forEach((clip, i) => {
+      const card = document.createElement("div");
+      card.className = "clip-card";
+
+      let actionRow = "";
+      let editorHtml = "";
+
+      if (clip.valid) {
+        const blocks = parseSrt(clip.srt_content || "");
+
+        const dlBtn = `<a class="download-btn" id="dl-btn-${i}"
+            href="/download/${encodeURIComponent(clip.filename)}" download>
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M12 5v14M5 12l7 7 7-7"/>
+            </svg>
+            Download MP4
+          </a>`;
+
+        const editBtn = blocks.length > 0
+          ? `<button class="edit-caps-btn" id="edit-btn-${i}" onclick="toggleEditor(${i})">
+               <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                 <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                 <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+               </svg>
+               Edit Captions
+             </button>`
+          : "";
+
+        actionRow = `<div class="clip-action-row">${dlBtn}${editBtn}</div>`;
+
+        if (blocks.length > 0) {
+          const blockRows = blocks.map((b, j) =>
+            `<div class="caption-block">
+               <span class="caption-ts">${escHtml(formatTs(b.start))} – ${escHtml(formatTs(b.end))}</span>
+               <input class="caption-input"
+                 id="caption-input-${i}-${j}"
+                 type="text"
+                 value="${escHtml(b.text)}"
+                 data-start="${escHtml(b.start)}"
+                 data-end="${escHtml(b.end)}"
+                 data-index="${b.index}"
+               >
+             </div>`
+          ).join("");
+
+          editorHtml = `
+            <div class="caption-editor" id="editor-${i}" style="display:none">
+              <div class="caption-blocks-label">Caption lines — click any to edit</div>
+              <div class="caption-blocks-list">${blockRows}</div>
+              <div class="caption-editor-actions" id="burn-actions-${i}">
+                <button class="burn-btn" onclick="startBurn('${escHtml(jobId)}', ${i})">
+                  Save &amp; Burn Captions
+                </button>
+                <button class="cancel-edit-btn" onclick="toggleEditor(${i})">Cancel</button>
+              </div>
+              <div class="burn-status" id="burn-status-${i}">
+                <span class="spinner"></span>
+                <span class="burn-msg"></span>
+              </div>
+            </div>`;
+        }
+      } else {
+        actionRow = `<div class="clip-action-row">
+          <div class="corrupt-badge" title="${escHtml(clip.corrupt_reason || '')}">
+            &#9888; Corrupt &mdash; could not be verified
+          </div>
+        </div>`;
+      }
+
+      const thumbHtml = clip.thumbnail
+        ? `<img class="clip-thumb"
+              src="/thumbnail/${encodeURIComponent(clip.thumbnail)}"
+              alt="${escHtml(clip.title)}"
+              loading="lazy">`
+        : "";
+
+      card.innerHTML = `
+        ${thumbHtml}
+        <div class="clip-header">
+          <div>
+            <div class="clip-num">Clip ${i + 1}</div>
+            <div class="clip-title">${escHtml(clip.title)}</div>
+          </div>
+          <div class="score-pill">${clip.score}/100</div>
+        </div>
+        ${clip.hook   ? `<div class="clip-hook">"${escHtml(clip.hook)}"</div>`      : ""}
+        ${clip.reason ? `<div class="clip-reason">${escHtml(clip.reason)}</div>`    : ""}
+        ${actionRow}
+        ${editorHtml}
+      `;
+      clipsList.appendChild(card);
+    });
+
+    progressCard.style.display = "none";
+    resultsCard.style.display = "block";
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  async function poll(jobId) {
+    try {
+      const res = await fetch("/status/" + jobId);
+      const data = await res.json();
+
+      if (data.status === "error") {
+        clearInterval(pollTimer);
+        showError(data.message);
+        return;
+      }
+
+      showProgress(data.message, data.step);
+
+      if (data.status === "done") {
+        clearInterval(pollTimer);
+        submitBtn.disabled = false;
+        // brief pause so progress bar hits 100% visually
+        setTimeout(() => renderClips(data.clips, jobId), 600);
+      }
+    } catch (e) {
+      clearInterval(pollTimer);
+      showError("Lost connection to server.");
+    }
+  }
+
+  /* ── Caption editor helpers ── */
+
+  function parseSrt(srtContent) {
+    if (!srtContent || !srtContent.trim()) return [];
+    return srtContent.trim().split(/\n\s*\n/).reduce((acc, entry) => {
+      const lines = entry.trim().split("\n");
+      if (lines.length < 3) return acc;
+      try {
+        const parts = lines[1].trim().split(" --> ");
+        acc.push({
+          index: parseInt(lines[0].trim(), 10),
+          start: parts[0].trim(),
+          end:   parts[1].trim(),
+          text:  lines.slice(2).join(" ").trim(),
+        });
+      } catch (_) {}
+      return acc;
+    }, []);
+  }
+
+  function serializeSrt(blocks) {
+    return blocks
+      .map(b => `${b.index}\n${b.start} --> ${b.end}\n${b.text}`)
+      .join("\n\n") + "\n";
+  }
+
+  function formatTs(ts) {
+    // "00:01:23,450"  →  "1:23"
+    try {
+      const [h, m, secMs] = ts.split(":");
+      const s = secMs.split(",")[0];
+      return `${parseInt(h, 10) * 60 + parseInt(m, 10)}:${s.padStart(2, "0")}`;
+    } catch (_) { return ts; }
+  }
+
+  function toggleEditor(i) {
+    const editor  = document.getElementById(`editor-${i}`);
+    const editBtn = document.getElementById(`edit-btn-${i}`);
+    const isOpen  = editor.style.display !== "none";
+    editor.style.display = isOpen ? "none" : "block";
+    editBtn.classList.toggle("open", !isOpen);
+  }
+
+  function startBurn(jobId, i) {
+    const editor  = document.getElementById(`editor-${i}`);
+    const inputs  = editor.querySelectorAll(".caption-input");
+    const blocks  = Array.from(inputs).map(inp => ({
+      index: parseInt(inp.dataset.index, 10),
+      start: inp.dataset.start,
+      end:   inp.dataset.end,
+      text:  inp.value,
+    }));
+    burnCaptions(jobId, i, blocks);
+  }
+
+  async function burnCaptions(jobId, clipIdx, blocks) {
+    const srtContent  = serializeSrt(blocks);
+    const statusEl    = document.getElementById(`burn-status-${clipIdx}`);
+    const actionsEl   = document.getElementById(`burn-actions-${clipIdx}`);
+    const msgEl       = statusEl.querySelector(".burn-msg");
+    const spinnerEl   = statusEl.querySelector(".spinner");
+    const burnBtn     = actionsEl.querySelector(".burn-btn");
+
+    // Show progress, hide action buttons
+    actionsEl.style.display   = "none";
+    statusEl.style.display    = "flex";
+    spinnerEl.style.display   = "inline-block";
+    msgEl.style.color         = "";
+    msgEl.textContent         = "Re-cutting clip…";
+    burnBtn.disabled          = true;
+
+    let burnId;
+    try {
+      const res  = await fetch("/burn_captions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: jobId, clip_index: clipIdx, srt_content: srtContent }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      burnId = data.burn_id;
+    } catch (e) {
+      showBurnError(clipIdx, e.message);
+      actionsEl.style.display = "flex";
+      burnBtn.disabled = false;
+      return;
+    }
+
+    // Poll burn status
+    const timer = setInterval(async () => {
+      try {
+        const res  = await fetch(`/burn_status/${burnId}`);
+        const data = await res.json();
+
+        if (data.message) msgEl.textContent = data.message;
+
+        if (data.status === "done") {
+          clearInterval(timer);
+          spinnerEl.style.display = "none";
+          msgEl.style.color  = "#4ade80";
+          msgEl.textContent  = "✓ Done! Download updated.";
+
+          // Update the download button URL (cache-buster forces fresh file)
+          const dlBtn = document.getElementById(`dl-btn-${clipIdx}`);
+          if (dlBtn) dlBtn.href = `/download/${encodeURIComponent(data.filename)}?t=${Date.now()}`;
+
+          burnBtn.disabled = false;
+
+          // Auto-collapse editor after 2.5 s
+          setTimeout(() => {
+            const editor  = document.getElementById(`editor-${clipIdx}`);
+            const editBtn = document.getElementById(`edit-btn-${clipIdx}`);
+            if (editor)  editor.style.display = "none";
+            if (editBtn) editBtn.classList.remove("open");
+            statusEl.style.display  = "none";
+            actionsEl.style.display = "flex";
+            spinnerEl.style.display = "inline-block";
+            msgEl.style.color       = "";
+            msgEl.textContent       = "";
+          }, 2500);
+
+        } else if (data.status === "error") {
+          clearInterval(timer);
+          showBurnError(clipIdx, data.message);
+          actionsEl.style.display = "flex";
+          burnBtn.disabled = false;
+        }
+      } catch (_) {
+        clearInterval(timer);
+        showBurnError(clipIdx, "Connection lost.");
+        actionsEl.style.display = "flex";
+        burnBtn.disabled = false;
+      }
+    }, 1500);
+  }
+
+  function showBurnError(i, msg) {
+    const statusEl  = document.getElementById(`burn-status-${i}`);
+    const msgEl     = statusEl.querySelector(".burn-msg");
+    const spinnerEl = statusEl.querySelector(".spinner");
+    statusEl.style.display  = "flex";
+    spinnerEl.style.display = "none";
+    msgEl.style.color = "#fca5a5";
+    msgEl.textContent = "Error: " + msg;
+  }
+
+  /* ── Form submission ── */
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorBanner.style.display = "none";
+    document.querySelector(".spinner").style.display = "inline-block";
+    submitBtn.disabled = true;
+
+    const fd = new FormData(form);
+
+    let jobId;
+    try {
+      const res = await fetch("/process", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.error) { showError(data.error); return; }
+      jobId = data.job_id;
+    } catch (e) {
+      showError("Failed to reach server.");
+      return;
+    }
+
+    showProgress("Starting...", 0);
+    pollTimer = setInterval(() => poll(jobId), 1500);
+  });
+
+  againBtn.addEventListener("click", () => {
+    resultsCard.style.display = "none";
+    formCard.style.display = "block";
+    form.reset();
+  });
+</script>
+</body>
+</html>
