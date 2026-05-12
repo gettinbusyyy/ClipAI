@@ -1,6 +1,6 @@
 import sys
 import os
-import shutil
+import tempfile
 import argparse
 from dotenv import load_dotenv
 import yt_dlp
@@ -10,29 +10,65 @@ load_dotenv()
 AUDIO_FILE = "audio.mp3"
 TRANSCRIPT_FILE = "transcript.txt"
 
-def download_audio(url: str) -> str:
-    # web client uses Node.js for nsig deciphering; android skips JS entirely.
-    # Ordering depends on whether node is available so the warning never appears.
-    if shutil.which("node"):
-        player_clients = ["web", "android"]
-    else:
-        player_clients = ["android", "web"]
+# mweb (mobile web) client mimics m.youtube.com — same auth context as a
+# browser session, so cookies apply directly and bot signals are lower.
+_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+    "Version/17.0 Mobile/15E148 Safari/604.1"
+)
 
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }],
-        "outtmpl": "audio.%(ext)s",
-        "quiet": False,
-        "no_warnings": False,
-        "extractor_args": {"youtube": {"player_client": player_clients}},
-    }
-    print(f"Downloading audio from: {url}")
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+
+def _write_cookies_file() -> "str | None":
+    """Materialise YOUTUBE_COOKIES env var as a Netscape-format temp file.
+
+    Returns the file path so yt-dlp can read it, or None if the variable
+    is not set.  Caller must delete the file when finished.
+    """
+    raw = os.getenv("YOUTUBE_COOKIES", "").strip()
+    if not raw:
+        return None
+    fd, path = tempfile.mkstemp(suffix=".txt", prefix="yt_cookies_")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        if not raw.startswith("# Netscape HTTP Cookie File"):
+            f.write("# Netscape HTTP Cookie File\n")
+        f.write(raw)
+        if not raw.endswith("\n"):
+            f.write("\n")
+    return path
+
+
+def download_audio(url: str) -> str:
+    cookies_path = _write_cookies_file()
+    try:
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }],
+            "outtmpl": "audio.%(ext)s",
+            "quiet": False,
+            "no_warnings": False,
+            "extractor_args": {"youtube": {"player_client": ["mweb"]}},
+            "http_headers": {
+                "User-Agent": _UA,
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            "sleep_interval_requests": 1,
+            "sleep_interval": 2,
+            **({"cookiefile": cookies_path} if cookies_path else {}),
+        }
+        print(f"Downloading audio from: {url}")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+    finally:
+        if cookies_path:
+            try:
+                os.unlink(cookies_path)
+            except OSError:
+                pass
     return AUDIO_FILE
 
 def transcribe_audio(audio_path: str):

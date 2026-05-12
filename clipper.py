@@ -4,6 +4,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,6 +15,30 @@ OUTPUT_DIR = "output_clips"
 FFMPEG  = shutil.which("ffmpeg")  or r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe"
 FFPROBE = shutil.which("ffprobe") or r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffprobe.exe"
 
+_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+    "Version/17.0 Mobile/15E148 Safari/604.1"
+)
+
+
+def _write_cookies_file() -> "str | None":
+    """Materialise YOUTUBE_COOKIES env var as a Netscape-format temp file.
+    Returns the path, or None if the variable is not set.
+    Caller must delete the file when finished.
+    """
+    raw = os.getenv("YOUTUBE_COOKIES", "").strip()
+    if not raw:
+        return None
+    fd, path = tempfile.mkstemp(suffix=".txt", prefix="yt_cookies_")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        if not raw.startswith("# Netscape HTTP Cookie File"):
+            f.write("# Netscape HTTP Cookie File\n")
+        f.write(raw)
+        if not raw.endswith("\n"):
+            f.write("\n")
+    return path
+
 def load_clips():
     with open(CLIPS_FILE, "r") as f:
         return json.load(f)
@@ -21,16 +46,29 @@ def load_clips():
 def download_video(url: str) -> str:
     print(f"Downloading video from {url}...")
     output_path = "full_video.mp4"
-    player_clients = "web,android" if shutil.which("node") else "android,web"
-    cmd = [
-        sys.executable, "-m", "yt_dlp",
-        "--extractor-args", f"youtube:player_client={player_clients}",
-        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
-        "-o", output_path,
-        "--merge-output-format", "mp4",
-        url
-    ]
-    subprocess.run(cmd, check=True)
+    cookies_path = _write_cookies_file()
+    try:
+        cmd = [
+            sys.executable, "-m", "yt_dlp",
+            "--extractor-args", "youtube:player_client=mweb",
+            "--user-agent", _UA,
+            "--add-header", "Accept-Language:en-US,en;q=0.9",
+            "--sleep-requests", "1",
+            "--sleep-interval", "2",
+            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+            "-o", output_path,
+            "--merge-output-format", "mp4",
+        ]
+        if cookies_path:
+            cmd += ["--cookies", cookies_path]
+        cmd.append(url)
+        subprocess.run(cmd, check=True)
+    finally:
+        if cookies_path:
+            try:
+                os.unlink(cookies_path)
+            except OSError:
+                pass
     return output_path
 
 def cut_clip(video_path: str, start_ms: int, end_ms: int, output_path: str):
