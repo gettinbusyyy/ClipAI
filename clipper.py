@@ -23,11 +23,41 @@ _UA = (
 )
 
 
+def _cookies_to_netscape(raw: str) -> str:
+    """Return raw as-is if already Netscape format, or convert from JSON."""
+    stripped = raw.strip()
+    if stripped.startswith("# Netscape HTTP Cookie File") or "\t" in stripped:
+        return raw
+
+    import json as _json
+    try:
+        data = _json.loads(stripped)
+    except _json.JSONDecodeError:
+        return raw
+
+    if isinstance(data, dict):
+        data = data.get("cookies", [])
+
+    lines = ["# Netscape HTTP Cookie File"]
+    for c in data:
+        domain  = c.get("domain", "")
+        flag    = "TRUE" if domain.startswith(".") else "FALSE"
+        path    = c.get("path", "/")
+        secure  = "TRUE" if c.get("secure", False) else "FALSE"
+        expiry  = int(c.get("expirationDate", c.get("expires", 0)) or 0)
+        name    = c.get("name", "")
+        value   = c.get("value", "")
+        lines.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expiry}\t{name}\t{value}")
+
+    return "\n".join(lines) + "\n"
+
+
 def _write_cookies_file() -> "str | None":
     """Materialise YouTube cookies as a Netscape-format temp file for yt-dlp.
 
-    Checks YOUTUBE_COOKIES_B64 (base64-encoded, recommended) then falls back
-    to YOUTUBE_COOKIES (raw Netscape text).  Returns None if neither is set.
+    Checks YOUTUBE_COOKIES_B64 (base64-encoded, recommended for Railway) then
+    falls back to YOUTUBE_COOKIES (raw text).  Automatically converts JSON
+    cookie exports to Netscape format.  Returns None if neither is set.
     Caller must delete the file when finished.
     """
     raw: str = ""
@@ -45,12 +75,11 @@ def _write_cookies_file() -> "str | None":
     if not raw:
         return None
 
+    netscape = _cookies_to_netscape(raw)
     fd, path = tempfile.mkstemp(suffix=".txt", prefix="yt_cookies_")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        if not raw.startswith("# Netscape HTTP Cookie File"):
-            f.write("# Netscape HTTP Cookie File\n")
-        f.write(raw)
-        if not raw.endswith("\n"):
+        f.write(netscape)
+        if not netscape.endswith("\n"):
             f.write("\n")
     return path
 

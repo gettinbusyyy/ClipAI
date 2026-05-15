@@ -20,12 +20,52 @@ _UA = (
 )
 
 
+def _cookies_to_netscape(raw: str) -> str:
+    """Return raw as-is if already Netscape format, or convert from JSON.
+
+    Handles the EditThisCookie / Chrome JSON export format:
+      [ { "domain": ".youtube.com", "name": "SID", "value": "...", ... } ]
+    and the wrapped variant { "cookies": [ ... ] }.
+    """
+    stripped = raw.strip()
+    if stripped.startswith("# Netscape HTTP Cookie File") or "\t" in stripped:
+        # Already Netscape — pass through unchanged
+        return raw
+
+    # Try JSON parse
+    import json as _json
+    try:
+        data = _json.loads(stripped)
+    except _json.JSONDecodeError:
+        # Not JSON either; return as-is and let yt-dlp surface the error
+        return raw
+
+    # Unwrap { "cookies": [...] } envelope if present
+    if isinstance(data, dict):
+        data = data.get("cookies", [])
+
+    lines = ["# Netscape HTTP Cookie File"]
+    for c in data:
+        domain  = c.get("domain", "")
+        flag    = "TRUE" if domain.startswith(".") else "FALSE"
+        path    = c.get("path", "/")
+        secure  = "TRUE" if c.get("secure", False) else "FALSE"
+        # expirationDate (Chrome) or expires (Firefox/generic); 0 = session
+        expiry  = int(c.get("expirationDate", c.get("expires", 0)) or 0)
+        name    = c.get("name", "")
+        value   = c.get("value", "")
+        lines.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expiry}\t{name}\t{value}")
+
+    print(f"[cookies] converted {len(data)} JSON cookies to Netscape format")
+    return "\n".join(lines) + "\n"
+
+
 def _write_cookies_file() -> "str | None":
     """Materialise YouTube cookies as a Netscape-format temp file for yt-dlp.
 
-    Checks YOUTUBE_COOKIES_B64 (base64-encoded Netscape text — recommended
-    for Railway because it survives copy-paste and line-ending mangling) then
-    falls back to YOUTUBE_COOKIES (raw Netscape text).
+    Checks YOUTUBE_COOKIES_B64 (base64-encoded — recommended for Railway)
+    then falls back to YOUTUBE_COOKIES (raw text).  Automatically converts
+    JSON-format cookie exports to Netscape format before writing.
 
     Returns the temp file path, or None if neither variable is set.
     Caller is responsible for deleting the file when finished.
@@ -50,13 +90,12 @@ def _write_cookies_file() -> "str | None":
         return None
 
     print(f"[cookies] first 100 chars: {repr(raw[:100])}")
+    netscape = _cookies_to_netscape(raw)
 
     fd, path = tempfile.mkstemp(suffix=".txt", prefix="yt_cookies_")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        if not raw.startswith("# Netscape HTTP Cookie File"):
-            f.write("# Netscape HTTP Cookie File\n")
-        f.write(raw)
-        if not raw.endswith("\n"):
+        f.write(netscape)
+        if not netscape.endswith("\n"):
             f.write("\n")
 
     print(f"[cookies] temp file: {path} ({os.path.getsize(path)} bytes)")
