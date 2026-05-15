@@ -150,6 +150,7 @@ def download_audio(url: str) -> str:
             "sleep_interval_requests": 1,
             "sleep_interval": 2,
             **({"cookiefile": cookies_path} if cookies_path else {}),
+            **({"proxy": os.environ["PROXY_URL"]} if os.environ.get("PROXY_URL") else {}),
         }
         print(f"Downloading audio from: {url}")
         try:
