@@ -24,4 +24,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD gunicorn app:app --workers 1 --threads 4 --bind 0.0.0.0:$PORT --timeout 300
+CMD exec gunicorn app:app --workers 1 --threads 4 --bind 0.0.0.0:$PORT --timeout 300
