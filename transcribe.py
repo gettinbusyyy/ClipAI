@@ -82,34 +82,24 @@ def _cookies_to_netscape(raw: str) -> str:
 def _write_cookies_file() -> "str | None":
     """Materialise YouTube cookies as a Netscape-format temp file for yt-dlp.
 
-    Checks YOUTUBE_COOKIES_B64 (base64-encoded — recommended for Railway)
-    then falls back to YOUTUBE_COOKIES (raw text).  Automatically converts
-    JSON-format cookie exports to Netscape format before writing.
+    Reads YOUTUBE_COOKIES (raw Netscape text or base64-encoded Netscape text).
+    Automatically converts base64 or JSON cookie exports to Netscape format.
 
-    Returns the temp file path, or None if neither variable is set.
+    Returns the temp file path, or None if the variable is not set.
     Caller is responsible for deleting the file when finished.
     """
     raw: str = ""
 
-    b64 = os.getenv("YOUTUBE_COOKIES_B64", "").strip()
-    if b64:
-        try:
-            raw = base64.b64decode(b64).decode("utf-8")
-            print(f"[cookies] loaded from YOUTUBE_COOKIES_B64 ({len(raw)} chars)")
-        except Exception as exc:
-            print(f"[cookies] YOUTUBE_COOKIES_B64 decode error: {exc}")
-
-    if not raw:
-        raw = os.getenv("YOUTUBE_COOKIES", "").strip()
-        if raw:
-            # Auto-decode if it looks like base64 (no tabs, no Netscape header, no JSON)
-            if "\t" not in raw and not raw.startswith(("# Netscape", "[", "{")):
-                try:
-                    raw = base64.b64decode(raw).decode("utf-8")
-                    print(f"[cookies] YOUTUBE_COOKIES was base64-encoded, decoded ({len(raw)} chars)")
-                except Exception:
-                    pass  # Not base64 — use raw value as-is
-            print(f"[cookies] loaded from YOUTUBE_COOKIES ({len(raw)} chars)")
+    raw = os.getenv("YOUTUBE_COOKIES", "").strip()
+    if raw:
+        # Auto-decode if it looks like base64 (no tabs, no Netscape header, no JSON)
+        if "\t" not in raw and not raw.startswith(("# Netscape", "[", "{")):
+            try:
+                raw = base64.b64decode(raw).decode("utf-8")
+                print(f"[cookies] YOUTUBE_COOKIES was base64-encoded, decoded ({len(raw)} chars)")
+            except Exception:
+                pass  # Not base64 — use raw value as-is
+        print(f"[cookies] loaded from YOUTUBE_COOKIES ({len(raw)} chars)")
 
     if not raw:
         print("[cookies] no cookies configured — proceeding unauthenticated")
@@ -141,7 +131,7 @@ def _raise_if_bot_blocked(exc: Exception) -> None:
             "YouTube blocked the download (bot detection). "
             "Fix: export fresh cookies from Firefox on youtube.com, "
             "base64-encode the file (`base64 cookies.txt`), "
-            "and set YOUTUBE_COOKIES_B64 in your Railway environment variables. "
+            "and set YOUTUBE_COOKIES in your Railway environment variables. "
             "Cookies expire roughly every two weeks and must be refreshed manually."
         ) from exc
 
