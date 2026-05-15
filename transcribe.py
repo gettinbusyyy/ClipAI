@@ -26,15 +26,28 @@ def _write_cookies_file() -> "str | None":
     is not set.  Caller must delete the file when finished.
     """
     raw = os.getenv("YOUTUBE_COOKIES", "").strip()
+
+    print(f"[cookies] YOUTUBE_COOKIES env var present: {bool(raw)}")
+    print(f"[cookies] content length: {len(raw)} chars")
+
     if not raw:
+        print("[cookies] no cookie content — skipping temp file")
         return None
+
+    print(f"[cookies] first 100 chars: {repr(raw[:100])}")
+    is_netscape = raw.startswith("# Netscape HTTP Cookie File")
+    print(f"[cookies] starts with Netscape header: {is_netscape}")
+
     fd, path = tempfile.mkstemp(suffix=".txt", prefix="yt_cookies_")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        if not raw.startswith("# Netscape HTTP Cookie File"):
+        if not is_netscape:
             f.write("# Netscape HTTP Cookie File\n")
         f.write(raw)
         if not raw.endswith("\n"):
             f.write("\n")
+
+    print(f"[cookies] temp file created: {path}")
+    print(f"[cookies] temp file size: {os.path.getsize(path)} bytes")
     return path
 
 
@@ -42,7 +55,7 @@ def download_audio(url: str) -> str:
     cookies_path = _write_cookies_file()
     try:
         ydl_opts = {
-            "format": "bestaudio/best",
+            "format": "bestvideo+bestaudio/best",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
