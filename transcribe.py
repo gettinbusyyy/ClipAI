@@ -1,12 +1,31 @@
 import sys
 import os
 import base64
+import shutil
 import tempfile
 import argparse
 from dotenv import load_dotenv
 import yt_dlp
 import assemblyai as aai
 load_dotenv()
+
+_NIX_BINS = [
+    "/nix/var/nix/profiles/default/bin",
+    "/root/.nix-profile/bin",
+    "/run/current-system/sw/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+]
+
+def _find_ffmpeg() -> str:
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    for directory in _NIX_BINS:
+        candidate = os.path.join(directory, "ffmpeg")
+        if os.path.isfile(candidate):
+            return candidate
+    return r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe"
 
 AUDIO_FILE = "audio.mp3"
 TRANSCRIPT_FILE = "transcript.txt"
@@ -149,6 +168,7 @@ def download_audio(url: str) -> str:
             },
             "sleep_interval_requests": 1,
             "sleep_interval": 2,
+            "ffmpeg_location": _find_ffmpeg(),
             **({"cookiefile": cookies_path} if cookies_path else {}),
             **({"proxy": os.environ["PROXY_URL"]} if os.environ.get("PROXY_URL") else {}),
         }

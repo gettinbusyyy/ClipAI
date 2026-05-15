@@ -12,9 +12,27 @@ load_dotenv()
 
 CLIPS_FILE = "clips.json"
 OUTPUT_DIR = "output_clips"
-# Use system ffmpeg when available (Railway/Linux); fall back to local Windows install.
-FFMPEG  = shutil.which("ffmpeg")  or r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe"
-FFPROBE = shutil.which("ffprobe") or r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffprobe.exe"
+
+_NIX_BINS = [
+    "/nix/var/nix/profiles/default/bin",
+    "/root/.nix-profile/bin",
+    "/run/current-system/sw/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+]
+
+def _find_bin(name: str, windows_fallback: str) -> str:
+    found = shutil.which(name)
+    if found:
+        return found
+    for directory in _NIX_BINS:
+        candidate = os.path.join(directory, name)
+        if os.path.isfile(candidate):
+            return candidate
+    return windows_fallback
+
+FFMPEG  = _find_bin("ffmpeg",  r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe")
+FFPROBE = _find_bin("ffprobe", r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffprobe.exe")
 
 _UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
@@ -114,6 +132,7 @@ def download_video(url: str) -> str:
     try:
         cmd = [
             sys.executable, "-m", "yt_dlp",
+            "--ffmpeg-location", FFMPEG,
             "--extractor-args", "youtube:player_client=web,mweb,android",
             "--user-agent", _UA,
             "--add-header", "Accept-Language:en-US,en;q=0.9",
