@@ -83,6 +83,13 @@ def _write_cookies_file() -> "str | None":
     if not raw:
         raw = os.getenv("YOUTUBE_COOKIES", "").strip()
         if raw:
+            # Auto-decode if it looks like base64 (no tabs, no Netscape header, no JSON)
+            if "\t" not in raw and not raw.startswith(("# Netscape", "[", "{")):
+                try:
+                    raw = base64.b64decode(raw).decode("utf-8")
+                    print(f"[cookies] YOUTUBE_COOKIES was base64-encoded, decoded ({len(raw)} chars)")
+                except Exception:
+                    pass  # Not base64 — use raw value as-is
             print(f"[cookies] loaded from YOUTUBE_COOKIES ({len(raw)} chars)")
 
     if not raw:
