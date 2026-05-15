@@ -155,6 +155,27 @@ def run_pipeline(job_id: str, url: str, niche: str, count: int = 3):
         })
 
 
+@app.route("/debug-ffmpeg")
+def debug_ffmpeg():
+    import subprocess as sp
+    def run(cmd):
+        try:
+            r = sp.run(cmd, capture_output=True, text=True, timeout=15)
+            return {"stdout": r.stdout.strip(), "stderr": r.stderr.strip(), "returncode": r.returncode}
+        except Exception as e:
+            return {"error": str(e)}
+
+    return jsonify({
+        "PATH":              os.environ.get("PATH", ""),
+        "which_ffmpeg":      run(["which", "ffmpeg"]),
+        "which_ffprobe":     run(["which", "ffprobe"]),
+        "find_nix_ffmpeg":   run(["find", "/nix", "-name", "ffmpeg",  "-type", "f"]),
+        "find_nix_ffprobe":  run(["find", "/nix", "-name", "ffprobe", "-type", "f"]),
+        "find_usr_ffmpeg":   run(["find", "/usr", "-name", "ffmpeg",  "-type", "f"]),
+        "shutil_which":      __import__("shutil").which("ffmpeg"),
+    })
+
+
 @app.route("/")
 def index():
     return render_template("index.html", niches=NICHES)
