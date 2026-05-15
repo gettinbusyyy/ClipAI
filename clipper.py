@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -23,13 +24,27 @@ _UA = (
 
 
 def _write_cookies_file() -> "str | None":
-    """Materialise YOUTUBE_COOKIES env var as a Netscape-format temp file.
-    Returns the path, or None if the variable is not set.
+    """Materialise YouTube cookies as a Netscape-format temp file for yt-dlp.
+
+    Checks YOUTUBE_COOKIES_B64 (base64-encoded, recommended) then falls back
+    to YOUTUBE_COOKIES (raw Netscape text).  Returns None if neither is set.
     Caller must delete the file when finished.
     """
-    raw = os.getenv("YOUTUBE_COOKIES", "").strip()
+    raw: str = ""
+
+    b64 = os.getenv("YOUTUBE_COOKIES_B64", "").strip()
+    if b64:
+        try:
+            raw = base64.b64decode(b64).decode("utf-8")
+        except Exception as exc:
+            print(f"[cookies] YOUTUBE_COOKIES_B64 decode error: {exc}")
+
+    if not raw:
+        raw = os.getenv("YOUTUBE_COOKIES", "").strip()
+
     if not raw:
         return None
+
     fd, path = tempfile.mkstemp(suffix=".txt", prefix="yt_cookies_")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         if not raw.startswith("# Netscape HTTP Cookie File"):
@@ -50,19 +65,34 @@ def download_video(url: str) -> str:
     try:
         cmd = [
             sys.executable, "-m", "yt_dlp",
-            "--extractor-args", "youtube:player_client=mweb",
+            "--extractor-args", "youtube:player_client=web,mweb,android",
             "--user-agent", _UA,
             "--add-header", "Accept-Language:en-US,en;q=0.9",
             "--sleep-requests", "1",
             "--sleep-interval", "2",
-            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+            "-f", "bestvideo+bestaudio/best",
             "-o", output_path,
             "--merge-output-format", "mp4",
         ]
         if cookies_path:
             cmd += ["--cookies", cookies_path]
         cmd.append(url)
-        subprocess.run(cmd, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            combined = (result.stderr + result.stdout).lower()
+            triggers = ("sign in", "bot", "confirm your", "not a robot", "403", "429")
+            if any(t in combined for t in triggers):
+                raise RuntimeError(
+                    "YouTube blocked the download (bot detection). "
+                    "Fix: export fresh cookies from Firefox on youtube.com, "
+                    "base64-encode the file (`base64 cookies.txt`), "
+                    "and set YOUTUBE_COOKIES_B64 in your Railway environment variables. "
+                    "Cookies expire roughly every two weeks and must be refreshed manually."
+                )
+            # Surface the raw yt-dlp stderr for other errors
+            raise subprocess.CalledProcessError(
+                result.returncode, cmd[0], result.stdout, result.stderr
+            )
     finally:
         if cookies_path:
             try:
