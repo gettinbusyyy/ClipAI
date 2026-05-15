@@ -89,8 +89,13 @@ def _write_cookies_file() -> "str | None":
         print("[cookies] no cookies configured — proceeding unauthenticated")
         return None
 
-    print(f"[cookies] first 100 chars: {repr(raw[:100])}")
+    print(f"[cookies] raw first 200 chars: {repr(raw[:200])}")
+    is_json = raw.strip().startswith(("[", "{"))
+    print(f"[cookies] detected format: {'JSON' if is_json else 'Netscape/unknown'}")
+
     netscape = _cookies_to_netscape(raw)
+
+    print(f"[cookies] netscape first 200 chars: {repr(netscape[:200])}")
 
     fd, path = tempfile.mkstemp(suffix=".txt", prefix="yt_cookies_")
     with os.fdopen(fd, "w", encoding="utf-8") as f:

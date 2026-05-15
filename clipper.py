@@ -66,21 +66,34 @@ def _write_cookies_file() -> "str | None":
     if b64:
         try:
             raw = base64.b64decode(b64).decode("utf-8")
+            print(f"[cookies] loaded from YOUTUBE_COOKIES_B64 ({len(raw)} chars)")
         except Exception as exc:
             print(f"[cookies] YOUTUBE_COOKIES_B64 decode error: {exc}")
 
     if not raw:
         raw = os.getenv("YOUTUBE_COOKIES", "").strip()
+        if raw:
+            print(f"[cookies] loaded from YOUTUBE_COOKIES ({len(raw)} chars)")
 
     if not raw:
+        print("[cookies] no cookies configured — proceeding unauthenticated")
         return None
 
+    print(f"[cookies] raw first 200 chars: {repr(raw[:200])}")
+    is_json = raw.strip().startswith(("[", "{"))
+    print(f"[cookies] detected format: {'JSON' if is_json else 'Netscape/unknown'}")
+
     netscape = _cookies_to_netscape(raw)
+
+    print(f"[cookies] netscape first 200 chars: {repr(netscape[:200])}")
+
     fd, path = tempfile.mkstemp(suffix=".txt", prefix="yt_cookies_")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(netscape)
         if not netscape.endswith("\n"):
             f.write("\n")
+
+    print(f"[cookies] temp file: {path} ({os.path.getsize(path)} bytes)")
     return path
 
 def load_clips():
