@@ -1,0 +1,16 @@
+.env
+.git
+__pycache__
+*.pyc
+*.pyo
+
+# Large runtime files that should never be baked into the image
+full_video.mp4
+audio.mp3
+transcript.txt
+clips.json
+output_clips/
+
+# Local cookie files — injected via Railway env vars at runtime
+cookies.txt
+cookie_b64.txt
