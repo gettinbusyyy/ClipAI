@@ -149,9 +149,7 @@ def download_audio(url: str) -> str:
             "outtmpl": "audio.%(ext)s",
             "quiet": False,
             "no_warnings": False,
-            # web → mweb → android priority; ios is excluded because it
-            # silently drops cookies (uses its own OAuth internally).
-            "extractor_args": {"youtube": {"player_client": ["web", "mweb", "android"]}},
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
             "http_headers": {
                 "User-Agent": _UA,
                 "Accept-Language": "en-US,en;q=0.9",

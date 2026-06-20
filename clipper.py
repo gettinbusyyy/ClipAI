@@ -124,7 +124,7 @@ def download_video(url: str) -> str:
         cmd = [
             sys.executable, "-m", "yt_dlp",
             "--ffmpeg-location", FFMPEG,
-            "--extractor-args", "youtube:player_client=web,mweb,android",
+            "--extractor-args", "youtube:player_client=android",
             "--user-agent", _UA,
             "--add-header", "Accept-Language:en-US,en;q=0.9",
             "--sleep-requests", "1",
