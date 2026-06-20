@@ -150,6 +150,8 @@ def download_audio(url: str) -> str:
             "quiet": False,
             "no_warnings": False,
             "extractor_args": {"youtube": {"player_client": ["android"]}},
+            "username": "oauth2",
+            "password": "",
             "http_headers": {
                 "User-Agent": _UA,
                 "Accept-Language": "en-US,en;q=0.9",

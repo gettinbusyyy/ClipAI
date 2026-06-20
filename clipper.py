@@ -125,6 +125,8 @@ def download_video(url: str) -> str:
             sys.executable, "-m", "yt_dlp",
             "--ffmpeg-location", FFMPEG,
             "--extractor-args", "youtube:player_client=android",
+            "--username", "oauth2",
+            "--password", "",
             "--user-agent", _UA,
             "--add-header", "Accept-Language:en-US,en;q=0.9",
             "--sleep-requests", "1",
