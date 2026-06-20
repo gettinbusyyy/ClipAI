@@ -30,13 +30,21 @@ def _find_ffmpeg() -> str:
 AUDIO_FILE = "audio.mp3"
 TRANSCRIPT_FILE = "transcript.txt"
 
-# mweb (mobile web) client mimics m.youtube.com — same auth context as a
-# browser session, so cookies apply directly and bot signals are lower.
-_UA = (
+_UA_WEB = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
     "AppleWebKit/605.1.15 (KHTML, like Gecko) "
     "Version/17.0 Mobile/15E148 Safari/604.1"
 )
+_UA_ANDROID = "com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip"
+_UA_IOS     = "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X)"
+
+# android/ios handle auth internally — cookies are ignored by those clients
+# web (mweb) is the last resort and benefits from cookie auth
+_PLAYER_ATTEMPTS = [
+    ("android", _UA_ANDROID, False),
+    ("ios",     _UA_IOS,     False),
+    ("web",     _UA_WEB,     True),
+]
 
 
 def _cookies_to_netscape(raw: str) -> str:
@@ -123,57 +131,67 @@ def _write_cookies_file() -> "str | None":
     return path
 
 
+_BOT_TRIGGERS = ("sign in", "bot", "confirm your", "not a robot", "403", "429")
+_BOT_FIX_MSG = (
+    "YouTube blocked the download with all player clients (android → ios → web). "
+    "Fix: export fresh cookies from Firefox on youtube.com, "
+    "base64-encode the file (`base64 cookies.txt`), "
+    "and set YOUTUBE_COOKIES in your Railway environment variables. "
+    "Cookies expire roughly every two weeks and must be refreshed manually."
+)
+
+def _is_bot_blocked(exc: Exception) -> bool:
+    return any(t in str(exc).lower() for t in _BOT_TRIGGERS)
+
 def _raise_if_bot_blocked(exc: Exception) -> None:
-    """Re-raise with a clear message when YouTube returns a bot-detection error."""
-    triggers = ("sign in", "bot", "confirm your", "not a robot", "403", "429")
-    if any(t in str(exc).lower() for t in triggers):
-        raise RuntimeError(
-            "YouTube blocked the download (bot detection). "
-            "Fix: export fresh cookies from Firefox on youtube.com, "
-            "base64-encode the file (`base64 cookies.txt`), "
-            "and set YOUTUBE_COOKIES in your Railway environment variables. "
-            "Cookies expire roughly every two weeks and must be refreshed manually."
-        ) from exc
+    if _is_bot_blocked(exc):
+        raise RuntimeError(_BOT_FIX_MSG) from exc
 
 
 def download_audio(url: str) -> str:
     cookies_path = _write_cookies_file()
+    last_exc = None
     try:
-        ydl_opts = {
-            "format": "bestvideo+bestaudio/best",
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }],
-            "outtmpl": "audio.%(ext)s",
-            "quiet": False,
-            "no_warnings": False,
-            "extractor_args": {"youtube": {"player_client": ["android"]}},
-            "http_headers": {
-                "User-Agent": "com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            "sleep_interval_requests": 1,
-            "sleep_interval": 2,
-            "ffmpeg_location": _find_ffmpeg(),
-            **({"cookiefile": cookies_path} if cookies_path else {}),
-            # **({"proxy": os.environ["PROXY_URL"]} if os.environ.get("PROXY_URL") else {}),  # disabled: testing android client without proxy
-        }
-        print(f"Downloading audio from: {url}")
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-        except yt_dlp.utils.DownloadError as exc:
-            _raise_if_bot_blocked(exc)
-            raise
+        for player_client, ua, use_cookies in _PLAYER_ATTEMPTS:
+            print(f"[download] trying player_client={player_client}")
+            ydl_opts = {
+                "format": "bestvideo+bestaudio/best",
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }],
+                "outtmpl": "audio.%(ext)s",
+                "quiet": False,
+                "no_warnings": False,
+                "extractor_args": {"youtube": {"player_client": [player_client]}},
+                "http_headers": {
+                    "User-Agent": ua,
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+                "sleep_interval_requests": 1,
+                "sleep_interval": 2,
+                "ffmpeg_location": _find_ffmpeg(),
+                **({"cookiefile": cookies_path} if (use_cookies and cookies_path) else {}),
+            }
+            print(f"Downloading audio from: {url}")
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+                return AUDIO_FILE
+            except yt_dlp.utils.DownloadError as exc:
+                last_exc = exc
+                if _is_bot_blocked(exc):
+                    print(f"[download] {player_client} blocked by bot detection, trying next...")
+                    continue
+                raise
+        raise RuntimeError(_BOT_FIX_MSG) from last_exc
     finally:
         if cookies_path:
             try:
                 os.unlink(cookies_path)
             except OSError:
                 pass
-    return AUDIO_FILE
 
 def transcribe_audio(audio_path: str):
     api_key = os.getenv("ASSEMBLYAI_API_KEY")

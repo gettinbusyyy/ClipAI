@@ -34,11 +34,19 @@ def _find_bin(name: str, windows_fallback: str) -> str:
 FFMPEG  = _find_bin("ffmpeg",  r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe")
 FFPROBE = _find_bin("ffprobe", r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffprobe.exe")
 
-_UA = (
+_UA_WEB = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
     "AppleWebKit/605.1.15 (KHTML, like Gecko) "
     "Version/17.0 Mobile/15E148 Safari/604.1"
 )
+_UA_ANDROID = "com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip"
+_UA_IOS     = "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X)"
+
+_PLAYER_ATTEMPTS = [
+    ("android", _UA_ANDROID, False),
+    ("ios",     _UA_IOS,     False),
+    ("web",     _UA_WEB,     True),
+]
 
 
 def _cookies_to_netscape(raw: str) -> str:
@@ -116,52 +124,56 @@ def load_clips():
     with open(CLIPS_FILE, "r") as f:
         return json.load(f)
 
+_BOT_TRIGGERS = ("sign in", "bot", "confirm your", "not a robot", "403", "429")
+_BOT_FIX_MSG = (
+    "YouTube blocked the download with all player clients (android → ios → web). "
+    "Fix: export fresh cookies from Firefox on youtube.com, "
+    "base64-encode the file (`base64 cookies.txt`), "
+    "and set YOUTUBE_COOKIES in your Railway environment variables. "
+    "Cookies expire roughly every two weeks and must be refreshed manually."
+)
+
 def download_video(url: str) -> str:
     print(f"Downloading video from {url}...")
     output_path = "full_video.mp4"
     cookies_path = _write_cookies_file()
+    last_result = None
     try:
-        cmd = [
-            sys.executable, "-m", "yt_dlp",
-            "--ffmpeg-location", FFMPEG,
-            "--extractor-args", "youtube:player_client=android",
-            "--user-agent", "com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip",
-            "--add-header", "Accept-Language:en-US,en;q=0.9",
-            "--sleep-requests", "1",
-            "--sleep-interval", "2",
-            "-f", "bestvideo+bestaudio/best",
-            "-o", output_path,
-            "--merge-output-format", "mp4",
-        ]
-        if cookies_path:
-            cmd += ["--cookies", cookies_path]
-        # proxy = os.environ.get("PROXY_URL")  # disabled: testing android client without proxy
-        # if proxy:
-        #     cmd += ["--proxy", proxy]
-        cmd.append(url)
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
+        for player_client, ua, use_cookies in _PLAYER_ATTEMPTS:
+            print(f"[download] trying player_client={player_client}")
+            cmd = [
+                sys.executable, "-m", "yt_dlp",
+                "--ffmpeg-location", FFMPEG,
+                "--extractor-args", f"youtube:player_client={player_client}",
+                "--user-agent", ua,
+                "--add-header", "Accept-Language:en-US,en;q=0.9",
+                "--sleep-requests", "1",
+                "--sleep-interval", "2",
+                "-f", "bestvideo+bestaudio/best",
+                "-o", output_path,
+                "--merge-output-format", "mp4",
+            ]
+            if use_cookies and cookies_path:
+                cmd += ["--cookies", cookies_path]
+            cmd.append(url)
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                return output_path
+            last_result = result
             combined = (result.stderr + result.stdout).lower()
-            triggers = ("sign in", "bot", "confirm your", "not a robot", "403", "429")
-            if any(t in combined for t in triggers):
-                raise RuntimeError(
-                    "YouTube blocked the download (bot detection). "
-                    "Fix: export fresh cookies from Firefox on youtube.com, "
-                    "base64-encode the file (`base64 cookies.txt`), "
-                    "and set YOUTUBE_COOKIES in your Railway environment variables. "
-                    "Cookies expire roughly every two weeks and must be refreshed manually."
-                )
-            # Surface the raw yt-dlp stderr for other errors
+            if any(t in combined for t in _BOT_TRIGGERS):
+                print(f"[download] {player_client} blocked by bot detection, trying next...")
+                continue
             raise subprocess.CalledProcessError(
                 result.returncode, cmd[0], result.stdout, result.stderr
             )
+        raise RuntimeError(_BOT_FIX_MSG)
     finally:
         if cookies_path:
             try:
                 os.unlink(cookies_path)
             except OSError:
                 pass
-    return output_path
 
 def cut_clip(video_path: str, start_ms: int, end_ms: int, output_path: str):
     start_sec = start_ms / 1000
