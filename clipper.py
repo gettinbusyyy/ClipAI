@@ -135,9 +135,9 @@ def download_video(url: str) -> str:
         ]
         if cookies_path:
             cmd += ["--cookies", cookies_path]
-        proxy = os.environ.get("PROXY_URL")
-        if proxy:
-            cmd += ["--proxy", proxy]
+        # proxy = os.environ.get("PROXY_URL")  # disabled: testing android client without proxy
+        # if proxy:
+        #     cmd += ["--proxy", proxy]
         cmd.append(url)
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:

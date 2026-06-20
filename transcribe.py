@@ -158,7 +158,7 @@ def download_audio(url: str) -> str:
             "sleep_interval": 2,
             "ffmpeg_location": _find_ffmpeg(),
             **({"cookiefile": cookies_path} if cookies_path else {}),
-            **({"proxy": os.environ["PROXY_URL"]} if os.environ.get("PROXY_URL") else {}),
+            # **({"proxy": os.environ["PROXY_URL"]} if os.environ.get("PROXY_URL") else {}),  # disabled: testing android client without proxy
         }
         print(f"Downloading audio from: {url}")
         try:
