@@ -66,9 +66,14 @@ def run_pipeline(job_id: str, url: str, niche: str, count: int = 3, clip_length:
         save_transcript(transcript_obj)
 
         update(2, "Analyzing transcript with Claude AI...")
-        from scorer import load_transcript, score_clips
+        from scorer import load_transcript, score_clips, get_video_duration_ms, validate_and_adjust
         transcript_text = load_transcript("transcript.txt")
-        clips = score_clips(transcript_text, niche, count, clip_length)
+        duration_ms = get_video_duration_ms(transcript_text)
+        count, clip_length, adjustment_note = validate_and_adjust(duration_ms, count, clip_length)
+        if adjustment_note:
+            jobs[job_id]["adjustment_note"] = adjustment_note
+            print(f"[pipeline] {adjustment_note}")
+        clips = score_clips(transcript_text, niche, count, clip_length, duration_ms)
         with open("clips.json", "w") as f:
             json.dump(clips, f, indent=2)
 
@@ -145,6 +150,7 @@ def run_pipeline(job_id: str, url: str, niche: str, count: int = 3, clip_length:
             "step": 4,
             "message": f"Done! {len(clip_files)} clips ready.",
             "clips": clip_files,
+            "adjustment_note": jobs[job_id].get("adjustment_note"),
         })
 
     except Exception as e:

@@ -29,6 +29,70 @@ LENGTH_RANGES = {
     "long":  (120_000, 240_000),
 }
 
+_LENGTH_ORDER = ["long", "medium", "short"]
+
+
+def get_video_duration_ms(transcript_text: str) -> int:
+    """Return the last end timestamp found in the transcript (milliseconds)."""
+    max_end = 0
+    for m in re.finditer(r'\[(\d+)-(\d+)\]', transcript_text):
+        end = int(m.group(2))
+        if end > max_end:
+            max_end = end
+    return max_end
+
+
+def _fmt_duration(ms: int) -> str:
+    total_sec = ms // 1000
+    m, s = divmod(total_sec, 60)
+    if m == 0:
+        return f"{s}s"
+    return f"{m}m {s}s" if s else f"{m}m"
+
+
+def validate_and_adjust(duration_ms: int, count: int, clip_length: str) -> tuple:
+    """Return (count, clip_length, note_or_None) adjusted so all clips fit without overlap."""
+    if duration_ms <= 0:
+        return count, clip_length, None
+
+    current_length = clip_length
+    while True:
+        min_ms, _ = LENGTH_RANGES[current_length]
+        max_possible = duration_ms // min_ms
+        if max_possible >= 1:
+            adjusted_count = min(count, max_possible)
+            if adjusted_count == count and current_length == clip_length:
+                return count, clip_length, None
+            dur_str = _fmt_duration(duration_ms)
+            note = (
+                f"Your video is {dur_str} long — we adjusted to "
+                f"{adjusted_count} clip{'s' if adjusted_count != 1 else ''} "
+                f"at {current_length} length to fit."
+            )
+            return adjusted_count, current_length, note
+
+        idx = _LENGTH_ORDER.index(current_length)
+        if idx + 1 >= len(_LENGTH_ORDER):
+            return 1, "short", (
+                f"Your video is {_fmt_duration(duration_ms)} long — "
+                "we adjusted to 1 short clip to fit."
+            )
+        current_length = _LENGTH_ORDER[idx + 1]
+
+
+def _remove_overlaps(clips: list) -> list:
+    """Sort clips by start_time and drop any that overlap the previous clip."""
+    clips = sorted(clips, key=lambda c: c.get("start_time", 0))
+    result = []
+    last_end = -1
+    for clip in clips:
+        start = clip.get("start_time", 0)
+        if start >= last_end:
+            result.append(clip)
+            last_end = clip.get("end_time", start)
+    return result
+
+
 def load_transcript(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
@@ -45,21 +109,33 @@ def select_niche() -> str:
             return NICHES[choice]
         print("Invalid choice, try again.")
 
-def score_clips(transcript: str, niche: str, count: int = 3, clip_length: str = "medium") -> list:
+def score_clips(
+    transcript: str,
+    niche: str,
+    count: int = 3,
+    clip_length: str = "medium",
+    duration_ms: int = 0,
+) -> list:
     min_ms, max_ms = LENGTH_RANGES.get(clip_length, (60_000, 120_000))
     min_sec = min_ms // 1000
     max_sec = max_ms // 1000
+    duration_line = (
+        f"The total video duration is approximately {duration_ms // 1000} seconds "
+        f"({_fmt_duration(duration_ms)}). All timestamps must be within this range.\n"
+        if duration_ms > 0 else ""
+    )
 
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     prompt = f"""You are a viral content expert for {niche} content on TikTok and YouTube Shorts.
 
 Analyze this transcript and identify the TOP {count} most viral-worthy clip segments.
 
-STRICT CLIP RULES — follow these exactly or the output is unusable:
-1. Each clip MUST be between {min_sec} and {max_sec} seconds long. That means (end_time - start_time) must be between {min_ms} and {max_ms} milliseconds. Do not produce clips shorter or longer than this range.
-2. start_time must fall at the beginning of a complete sentence — never cut in mid-sentence or mid-word.
+{duration_line}STRICT CLIP RULES — follow these exactly or the output is unusable:
+1. Each clip MUST be between {min_sec} and {max_sec} seconds long. That means (end_time - start_time) must be between {min_ms} and {max_ms} milliseconds.
+2. start_time must fall at the beginning of a complete sentence — never cut mid-sentence or mid-word.
 3. end_time must fall at the end of a complete sentence, natural pause, or clear topic transition — never cut mid-speech.
-4. Pick segments that open with a strong standalone hook in the first 5 seconds.
+4. Clips must NOT overlap. List them in chronological order; each clip's start_time must be after the previous clip's end_time.
+5. Pick segments that open with a strong standalone hook in the first 5 seconds.
 
 For each clip return a JSON object with:
 - start_time: start timestamp in milliseconds (sentence boundary)
@@ -79,14 +155,14 @@ TRANSCRIPT:
         max_tokens=max(1024, count * 300),
         messages=[{"role": "user", "content": prompt}]
     )
-    
+
     response_text = message.content[0].text
     clean = response_text.strip()
     if clean.startswith("```"):
         clean = re.sub(r"```json|```", "", clean).strip()
-    
+
     clips = json.loads(clean)
-    return clips
+    return _remove_overlaps(clips)
 
 def main():
     if not os.path.exists(TRANSCRIPT_FILE):

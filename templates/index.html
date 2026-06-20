@@ -325,6 +325,17 @@
     }
     .again-btn:hover { border-color: #6366f1; color: #a5b4fc; }
 
+    .adjustment-note {
+      background: #0f1f38;
+      border: 1px solid #1d4ed8;
+      border-radius: 8px;
+      color: #93c5fd;
+      font-size: 0.83rem;
+      line-height: 1.5;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+    }
+
     /* ── Clip thumbnail ── */
     .clip-thumb {
       width: 100%;
@@ -624,6 +635,7 @@
       <h2>Top Clips</h2>
       <span class="badge" id="results-badge">3 clips</span>
     </div>
+    <div class="adjustment-note" id="adjustment-note" style="display:none"></div>
     <div id="clips-list"></div>
     <button class="again-btn" id="again-btn">+ Generate from another video</button>
   </div>
@@ -679,9 +691,17 @@
     if (pollTimer) clearInterval(pollTimer);
   }
 
-  function renderClips(clips, jobId) {
+  function renderClips(clips, jobId, adjustmentNote) {
     clipsList.innerHTML = "";
     resultsBadge.textContent = clips.length + " clip" + (clips.length !== 1 ? "s" : "");
+
+    const noteEl = document.getElementById("adjustment-note");
+    if (adjustmentNote) {
+      noteEl.textContent = adjustmentNote;
+      noteEl.style.display = "block";
+    } else {
+      noteEl.style.display = "none";
+    }
 
     clips.forEach((clip, i) => {
       const card = document.createElement("div");
@@ -805,7 +825,7 @@
         clearInterval(pollTimer);
         submitBtn.disabled = false;
         // brief pause so progress bar hits 100% visually
-        setTimeout(() => renderClips(data.clips, jobId), 600);
+        setTimeout(() => renderClips(data.clips, jobId, data.adjustment_note), 600);
       }
     } catch (e) {
       clearInterval(pollTimer);
@@ -985,6 +1005,7 @@
 
   againBtn.addEventListener("click", () => {
     resultsCard.style.display = "none";
+    document.getElementById("adjustment-note").style.display = "none";
     formCard.style.display = "block";
     form.reset();
   });
