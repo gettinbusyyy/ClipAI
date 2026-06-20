@@ -52,7 +52,7 @@ def parse_srt(srt_content):
     return blocks
 
 
-def run_pipeline(job_id: str, url: str, niche: str, count: int = 3):
+def run_pipeline(job_id: str, url: str, niche: str, count: int = 3, clip_length: str = "medium"):
     def update(step, message):
         jobs[job_id].update({"step": step, "message": message})
 
@@ -68,7 +68,7 @@ def run_pipeline(job_id: str, url: str, niche: str, count: int = 3):
         update(2, "Analyzing transcript with Claude AI...")
         from scorer import load_transcript, score_clips
         transcript_text = load_transcript("transcript.txt")
-        clips = score_clips(transcript_text, niche, count)
+        clips = score_clips(transcript_text, niche, count, clip_length)
         with open("clips.json", "w") as f:
             json.dump(clips, f, indent=2)
 
@@ -194,10 +194,14 @@ def process():
         count = 3
     count = max(1, min(15, count))  # clamp to sane range
 
+    clip_length = request.form.get("clip_length", "medium").strip()
+    if clip_length not in ("short", "medium", "long"):
+        clip_length = "medium"
+
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "running", "step": 0, "message": "Starting...", "clips": []}
 
-    t = threading.Thread(target=run_pipeline, args=(job_id, url, niche, count), daemon=True)
+    t = threading.Thread(target=run_pipeline, args=(job_id, url, niche, count, clip_length), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id})

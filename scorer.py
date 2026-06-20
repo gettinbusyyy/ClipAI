@@ -23,6 +23,12 @@ NICHES = {
     "10": "Sports & Gaming",
 }
 
+LENGTH_RANGES = {
+    "short":  (30_000,  60_000),
+    "medium": (60_000, 120_000),
+    "long":  (120_000, 240_000),
+}
+
 def load_transcript(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
@@ -39,15 +45,25 @@ def select_niche() -> str:
             return NICHES[choice]
         print("Invalid choice, try again.")
 
-def score_clips(transcript: str, niche: str, count: int = 3) -> list:
+def score_clips(transcript: str, niche: str, count: int = 3, clip_length: str = "medium") -> list:
+    min_ms, max_ms = LENGTH_RANGES.get(clip_length, (60_000, 120_000))
+    min_sec = min_ms // 1000
+    max_sec = max_ms // 1000
+
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     prompt = f"""You are a viral content expert for {niche} content on TikTok and YouTube Shorts.
 
 Analyze this transcript and identify the TOP {count} most viral-worthy clip segments.
 
+STRICT CLIP RULES — follow these exactly or the output is unusable:
+1. Each clip MUST be between {min_sec} and {max_sec} seconds long. That means (end_time - start_time) must be between {min_ms} and {max_ms} milliseconds. Do not produce clips shorter or longer than this range.
+2. start_time must fall at the beginning of a complete sentence — never cut in mid-sentence or mid-word.
+3. end_time must fall at the end of a complete sentence, natural pause, or clear topic transition — never cut mid-speech.
+4. Pick segments that open with a strong standalone hook in the first 5 seconds.
+
 For each clip return a JSON object with:
-- start_time: start timestamp in milliseconds
-- end_time: end timestamp in milliseconds
+- start_time: start timestamp in milliseconds (sentence boundary)
+- end_time: end timestamp in milliseconds (sentence boundary)
 - title: punchy clip title (max 8 words)
 - hook: the opening hook line
 - score: virality score 1-100
@@ -60,7 +76,7 @@ TRANSCRIPT:
 
     message = client.messages.create(
         model=MODEL,
-        max_tokens=max(1024, count * 250),
+        max_tokens=max(1024, count * 300),
         messages=[{"role": "user", "content": prompt}]
     )
     
