@@ -33,6 +33,7 @@ def _find_bin(name: str, windows_fallback: str) -> str:
 
 FFMPEG  = _find_bin("ffmpeg",  r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe")
 FFPROBE = _find_bin("ffprobe", r"C:\Users\Owner\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffprobe.exe")
+MIN_CLIP_BYTES = 100 * 1024  # 100 KB — below this the file is likely corrupt or empty
 
 _UA_WEB = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
@@ -178,29 +179,40 @@ def download_video(url: str) -> str:
 def cut_clip(video_path: str, start_ms: int, end_ms: int, output_path: str):
     start_sec = start_ms / 1000
     duration_sec = (end_ms - start_ms) / 1000
-    cmd = [
+    # Flags shared by both attempts
+    common = [
         FFMPEG,
-        "-ss", str(start_sec),        # fast seek before -i
+        "-ss", str(start_sec),
         "-i", video_path,
         "-t", str(duration_sec),
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-avoid_negative_ts", "make_zero",  # normalise PTS so non-zero starts don't corrupt
-        "-movflags", "+faststart",           # moov atom at front — required for valid MP4
+        "-avoid_negative_ts", "make_zero",
+        "-fflags", "+genpts",
+        "-movflags", "+faststart",
         "-y",
-        output_path
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
 
+    # Attempt 1: stream copy — fast, no quality loss
+    result = subprocess.run(common + ["-c", "copy", output_path], capture_output=True)
+    if result.returncode == 0 and validate_clip(output_path):
+        print(f"Saved (stream copy): {output_path}")
+        return
+
+    # Attempt 2: full re-encode — fixes bad timestamps and keyframe boundary issues
+    print(f"[cut_clip] stream copy invalid, re-encoding: {output_path}")
+    if os.path.exists(output_path):
+        os.remove(output_path)
+    subprocess.run(
+        common + ["-c:v", "libx264", "-c:a", "aac", output_path],
+        check=True, capture_output=True,
+    )
     if not validate_clip(output_path):
-        raise RuntimeError(f"ffprobe rejected output file: {output_path}")
-
-    print(f"Saved: {output_path}")
+        raise RuntimeError(f"ffprobe rejected output file after re-encode: {output_path}")
+    print(f"Saved (re-encoded): {output_path}")
 
 
 def validate_clip(path: str) -> bool:
-    """Return True only if ffprobe can read at least one video stream from the file."""
-    if not os.path.exists(path) or os.path.getsize(path) < 1024:
+    """Return True only if the file is ≥100 KB and ffprobe finds a video stream."""
+    if not os.path.exists(path) or os.path.getsize(path) < MIN_CLIP_BYTES:
         return False
     result = subprocess.run(
         [
