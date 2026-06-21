@@ -336,7 +336,7 @@
       margin-bottom: 16px;
     }
 
-    /* ── Clip thumbnail ── */
+    /* ── Clip thumbnail (static fallback for corrupt clips) ── */
     .clip-thumb {
       width: 100%;
       display: block;
@@ -345,6 +345,63 @@
       aspect-ratio: 16 / 9;
       object-fit: cover;
       background: #1e2435;
+    }
+
+    /* ── Clip preview: thumbnail + play overlay → in-page video ── */
+    .thumb-wrap {
+      position: relative;
+      margin-bottom: 14px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #0a0c12;
+      aspect-ratio: 16 / 9;
+      cursor: pointer;
+    }
+    .thumb-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .thumb-wrap--empty {
+      background: #161a24;
+      border: 1px solid #252a38;
+    }
+    .play-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.28);
+      transition: background 0.15s;
+    }
+    .thumb-wrap:hover .play-overlay          { background: rgba(0, 0, 0, 0.48); }
+    .thumb-wrap--empty .play-overlay         { background: transparent; }
+    .thumb-wrap--empty:hover .play-overlay   { background: rgba(99, 102, 241, 0.08); }
+    .play-btn {
+      width: 54px; height: 54px;
+      background: rgba(255, 255, 255, 0.93);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      padding-left: 3px;
+      transition: transform 0.15s, background 0.15s;
+    }
+    .thumb-wrap:hover .play-btn              { transform: scale(1.1); background: #fff; }
+    .play-btn--empty {
+      background: #1e1b4b;
+      border: 2px solid #4338ca;
+    }
+    .thumb-wrap--empty:hover .play-btn--empty { background: #312e81; }
+
+    .clip-video {
+      display: none;
+      width: 100%;
+      border-radius: 8px;
+      background: #000;
+      margin-bottom: 14px;
+      aspect-ratio: 16 / 9;
     }
 
     /* ── Clip action row ── */
@@ -772,15 +829,39 @@
         </div>`;
       }
 
-      const thumbHtml = clip.thumbnail
-        ? `<img class="clip-thumb"
-              src="/thumbnail/${encodeURIComponent(clip.thumbnail)}"
-              alt="${escHtml(clip.title)}"
-              loading="lazy">`
-        : "";
+      const videoUrl = `/stream/${encodeURIComponent(clip.filename)}`;
+      const playIcon = `<svg width="18" height="18" viewBox="0 0 24 24">
+        <polygon points="6,3 20,12 6,21" fill="currentColor"/>
+      </svg>`;
+      let previewHtml = "";
+      if (clip.valid && clip.thumbnail) {
+        previewHtml = `
+          <div class="thumb-wrap" id="thumb-wrap-${i}" onclick="showPlayer(${i})">
+            <img src="/thumbnail/${encodeURIComponent(clip.thumbnail)}"
+                 alt="${escHtml(clip.title)}" loading="lazy">
+            <div class="play-overlay">
+              <div class="play-btn" style="color:#312e81">${playIcon}</div>
+            </div>
+          </div>
+          <video class="clip-video" id="player-${i}" controls preload="none"
+                 src="${videoUrl}"></video>`;
+      } else if (clip.valid) {
+        previewHtml = `
+          <div class="thumb-wrap thumb-wrap--empty" id="thumb-wrap-${i}" onclick="showPlayer(${i})">
+            <div class="play-overlay">
+              <div class="play-btn play-btn--empty" style="color:#818cf8">${playIcon}</div>
+            </div>
+          </div>
+          <video class="clip-video" id="player-${i}" controls preload="none"
+                 src="${videoUrl}"></video>`;
+      } else if (clip.thumbnail) {
+        previewHtml = `<img class="clip-thumb"
+          src="/thumbnail/${encodeURIComponent(clip.thumbnail)}"
+          alt="${escHtml(clip.title)}" loading="lazy">`;
+      }
 
       card.innerHTML = `
-        ${thumbHtml}
+        ${previewHtml}
         <div class="clip-header">
           <div>
             <div class="clip-num">Clip ${i + 1}</div>
@@ -806,6 +887,15 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function showPlayer(i) {
+    const wrap  = document.getElementById(`thumb-wrap-${i}`);
+    const video = document.getElementById(`player-${i}`);
+    if (!video) return;
+    if (wrap) wrap.style.display = "none";
+    video.style.display = "block";
+    video.play().catch(() => {});
   }
 
   async function poll(jobId) {

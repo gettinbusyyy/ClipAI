@@ -235,6 +235,13 @@ def thumbnail(filename):
     return send_from_directory(os.path.join(BASE_DIR, "output_clips"), filename)
 
 
+@app.route("/stream/<path:filename>")
+def stream_clip(filename):
+    # Served without as_attachment so the browser can play it inline.
+    # Flask's send_file supports HTTP range requests, enabling video seeking.
+    return send_from_directory(os.path.join(BASE_DIR, "output_clips"), filename)
+
+
 def do_burn(burn_id, job_id, clip_index, clip_info, srt_content):
     from clipper import cut_clip, burn_captions
     raw_path = None
