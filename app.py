@@ -9,6 +9,12 @@ import threading
 from datetime import timedelta
 
 import stripe
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import (
+    LoginManager, UserMixin,
+    login_user, logout_user, current_user,
+)
+from werkzeug.security import generate_password_hash, check_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
@@ -22,6 +28,14 @@ from flask import (
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=90)
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(BASE_DIR, 'clipai.db')}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db = SQLAlchemy(app)
+
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message = ""
 
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
@@ -59,6 +73,35 @@ PLANS = {
 FREE_CLIPS_PER_DAY = 3
 
 
+# ── Database model ────────────────────────────────────────────────────────────
+
+class User(UserMixin, db.Model):
+    id                     = db.Column(db.Integer, primary_key=True)
+    email                  = db.Column(db.String(255), unique=True, nullable=False)
+    password_hash          = db.Column(db.String(255), nullable=False)
+    plan                   = db.Column(db.String(20), default="free")
+    stripe_customer_id     = db.Column(db.String(255))
+    stripe_subscription_id = db.Column(db.String(255))
+    clips_used_today       = db.Column(db.Integer, default=0)
+    clips_date             = db.Column(db.String(10))
+    created_at             = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+    def set_password(self, pw: str):
+        self.password_hash = generate_password_hash(pw)
+
+    def check_password(self, pw: str) -> bool:
+        return check_password_hash(self.password_hash, pw)
+
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    return db.session.get(User, int(user_id))
+
+
+with app.app_context():
+    db.create_all()
+
+
 @app.before_request
 def _make_session_permanent():
     flask_session.permanent = True
@@ -67,6 +110,8 @@ def _make_session_permanent():
 # ── Plan / usage helpers ──────────────────────────────────────────────────────
 
 def get_plan() -> str:
+    if current_user.is_authenticated:
+        return current_user.plan or "free"
     return flask_session.get("plan", "free")
 
 
@@ -81,6 +126,12 @@ def get_daily_limit():
 
 def get_daily_used() -> int:
     today = datetime.date.today().isoformat()
+    if current_user.is_authenticated:
+        if current_user.clips_date != today:
+            current_user.clips_used_today = 0
+            current_user.clips_date = today
+            db.session.commit()
+        return current_user.clips_used_today or 0
     if flask_session.get("clip_date") != today:
         flask_session["clip_date"] = today
         flask_session["clip_count"] = 0
@@ -88,8 +139,18 @@ def get_daily_used() -> int:
 
 
 def consume_clips(n: int):
-    get_daily_used()  # ensure clip_date is initialised for today
-    flask_session["clip_count"] = flask_session.get("clip_count", 0) + n
+    today = datetime.date.today().isoformat()
+    if current_user.is_authenticated:
+        if current_user.clips_date != today:
+            current_user.clips_used_today = 0
+            current_user.clips_date = today
+        current_user.clips_used_today = (current_user.clips_used_today or 0) + n
+        db.session.commit()
+    else:
+        if flask_session.get("clip_date") != today:
+            flask_session["clip_date"] = today
+            flask_session["clip_count"] = 0
+        flask_session["clip_count"] = flask_session.get("clip_count", 0) + n
 
 NICHES = {
     "1": "Tech & Startups",
@@ -271,6 +332,7 @@ def index():
         daily_limit=limit,
         daily_used=used,
         daily_remaining=(limit - used) if limit is not None else None,
+        current_user=current_user,
     )
 
 
@@ -439,18 +501,21 @@ def pricing():
         "pricing.html",
         plans=PLANS,
         current_plan=get_plan(),
+        current_user=current_user,
         publishable_key=STRIPE_PUBLISHABLE_KEY,
     )
 
 
 @app.route("/create-checkout-session", methods=["POST"])
 def create_checkout_session():
+    if not current_user.is_authenticated:
+        return redirect(url_for("login") + "?next=/pricing")
     plan_key = request.form.get("plan", "")
     if plan_key not in PLANS:
         return redirect("/pricing")
     plan = PLANS[plan_key]
     try:
-        checkout = stripe.checkout.Session.create(
+        kwargs = dict(
             payment_method_types=["card"],
             line_items=[{
                 "price_data": {
@@ -474,6 +539,11 @@ def create_checkout_session():
             ),
             cancel_url=url_for("pricing", _external=True),
         )
+        if current_user.stripe_customer_id:
+            kwargs["customer"] = current_user.stripe_customer_id
+        else:
+            kwargs["customer_email"] = current_user.email
+        checkout = stripe.checkout.Session.create(**kwargs)
         return redirect(checkout.url, code=303)
     except stripe.StripeError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -488,9 +558,16 @@ def payment_success():
         try:
             checkout = stripe.checkout.Session.retrieve(session_id)
             if checkout.payment_status == "paid":
-                flask_session["plan"] = plan_key
-                flask_session["subscription_id"] = checkout.subscription
-                flask_session["clip_count"] = 0  # reset count on upgrade
+                if current_user.is_authenticated:
+                    current_user.plan = plan_key
+                    current_user.stripe_subscription_id = checkout.subscription
+                    current_user.stripe_customer_id = checkout.customer
+                    current_user.clips_used_today = 0
+                    db.session.commit()
+                else:
+                    flask_session["plan"] = plan_key
+                    flask_session["subscription_id"] = checkout.subscription
+                    flask_session["clip_count"] = 0
                 activated = True
         except stripe.StripeError:
             pass
@@ -515,9 +592,15 @@ def stripe_webhook():
         return "", 400
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
-    except (ValueError, stripe.errors.SignatureVerificationError):
+    except (ValueError, stripe.SignatureVerificationError):
         return "", 400
-    # subscription.deleted → sessions expire naturally (no server-side user DB)
+    if event["type"] == "customer.subscription.deleted":
+        sub  = event["data"]["object"]
+        user = User.query.filter_by(stripe_subscription_id=sub["id"]).first()
+        if user:
+            user.plan = "free"
+            user.stripe_subscription_id = None
+            db.session.commit()
     return "", 200
 
 
@@ -531,6 +614,61 @@ def api_plan():
         "used": used,
         "remaining": (limit - used) if limit is not None else None,
     })
+
+
+# ── Auth routes ───────────────────────────────────────────────────────────────
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if current_user.is_authenticated:
+        return redirect("/")
+    error = None
+    if request.method == "POST":
+        email    = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        if not email or not password:
+            error = "Email and password are required."
+        elif len(password) < 8:
+            error = "Password must be at least 8 characters."
+        elif User.query.filter_by(email=email).first():
+            error = "An account with this email already exists."
+        else:
+            user = User(email=email)
+            user.set_password(password)
+            # Carry over any plan purchased before signing up
+            session_plan = flask_session.get("plan")
+            if session_plan in PLANS:
+                user.plan = session_plan
+                user.stripe_subscription_id = flask_session.get("subscription_id")
+            db.session.add(user)
+            db.session.commit()
+            login_user(user, remember=True)
+            flask_session.clear()
+            return redirect("/")
+    return render_template("signup.html", error=error)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect("/")
+    error = None
+    if request.method == "POST":
+        email    = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        user = User.query.filter_by(email=email).first()
+        if not user or not user.check_password(password):
+            error = "Invalid email or password."
+        else:
+            login_user(user, remember=True)
+            return redirect(request.args.get("next") or "/")
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    logout_user()
+    return redirect("/")
 
 
 if __name__ == "__main__":
