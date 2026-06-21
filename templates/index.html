@@ -336,6 +336,33 @@
       margin-bottom: 16px;
     }
 
+    .upgrade-banner {
+      background: #1a1035;
+      border: 1px solid #4338ca;
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-top: 16px;
+      display: none;
+    }
+    .upgrade-banner p {
+      font-size: 0.88rem;
+      color: #c7d2fe;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+    .upgrade-banner a {
+      display: inline-block;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 9px 20px;
+      text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    .upgrade-banner a:hover { opacity: 0.88; }
+
     /* ── Clip thumbnail (static fallback for corrupt clips) ── */
     .clip-thumb {
       width: 100%;
@@ -604,9 +631,21 @@
 <body>
 <div class="container">
 
-  <div class="logo">
-    <div class="logo-icon">✂</div>
-    <h1>Clip<span>AI</span></h1>
+  <div class="logo" style="justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="logo-icon">✂</div>
+      <h1>Clip<span>AI</span></h1>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;font-size:0.82rem">
+      {% if plan == "free" %}
+        <span style="color:#64748b">Free &middot; {{ daily_remaining }}/{{ daily_limit }} clips left today</span>
+      {% elif plan == "basic" %}
+        <span style="color:#4ade80">Basic &middot; {% if daily_remaining is not none %}{{ daily_remaining }}/{{ daily_limit }} clips left{% else %}unlimited{% endif %}</span>
+      {% else %}
+        <span style="color:#a5b4fc">Pro &middot; Unlimited</span>
+      {% endif %}
+      <a href="/pricing" style="color:#6366f1;text-decoration:none;font-weight:600">Upgrade</a>
+    </div>
   </div>
 
   <!-- Form card -->
@@ -684,6 +723,10 @@
     </p>
 
     <div class="error-banner" id="error-banner"></div>
+    <div class="upgrade-banner" id="upgrade-banner">
+      <p id="upgrade-msg"></p>
+      <a href="/pricing">View plans &rarr;</a>
+    </div>
   </div>
 
   <!-- Results card -->
@@ -746,6 +789,16 @@
     statusText.textContent = "Something went wrong.";
     submitBtn.disabled = false;
     if (pollTimer) clearInterval(pollTimer);
+  }
+
+  function showUpgradePrompt(data) {
+    progressCard.style.display = "block";
+    document.querySelector(".spinner").style.display = "none";
+    statusText.textContent = "Clip limit reached.";
+    const banner = document.getElementById("upgrade-banner");
+    document.getElementById("upgrade-msg").textContent = data.message || "You've reached your daily clip limit.";
+    banner.style.display = "block";
+    submitBtn.disabled = false;
   }
 
   function renderClips(clips, jobId, adjustmentNote) {
@@ -1082,6 +1135,7 @@
     try {
       const res = await fetch("/process", { method: "POST", body: fd });
       const data = await res.json();
+      if (data.error === "limit_reached") { showUpgradePrompt(data); return; }
       if (data.error) { showError(data.error); return; }
       jobId = data.job_id;
     } catch (e) {
@@ -1094,8 +1148,10 @@
   });
 
   againBtn.addEventListener("click", () => {
-    resultsCard.style.display = "none";
+    resultsCard.style.display  = "none";
+    progressCard.style.display = "none";
     document.getElementById("adjustment-note").style.display = "none";
+    document.getElementById("upgrade-banner").style.display  = "none";
     formCard.style.display = "block";
     form.reset();
   });

@@ -3,15 +3,93 @@ import sys
 import re
 import json
 import uuid
+import secrets
+import datetime
 import threading
+from datetime import timedelta
+
+import stripe
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
 
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import (
+    Flask, render_template, request, jsonify,
+    send_from_directory, redirect, session as flask_session, url_for,
+)
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=90)
+
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+PLANS = {
+    "basic": {
+        "name": "Basic",
+        "monthly_price": 19,
+        "amount": 1900,
+        "clips_per_day": 10,
+        "features": [
+            "10 clips per day",
+            "Short, medium & long clips",
+            "Auto-captions",
+            "Thumbnail generation",
+            "In-browser preview",
+        ],
+    },
+    "pro": {
+        "name": "Pro",
+        "monthly_price": 49,
+        "amount": 4900,
+        "clips_per_day": None,
+        "features": [
+            "Unlimited clips per day",
+            "Short, medium & long clips",
+            "Auto-captions",
+            "Thumbnail generation",
+            "In-browser preview",
+            "Priority processing",
+        ],
+    },
+}
+FREE_CLIPS_PER_DAY = 3
+
+
+@app.before_request
+def _make_session_permanent():
+    flask_session.permanent = True
+
+
+# ── Plan / usage helpers ──────────────────────────────────────────────────────
+
+def get_plan() -> str:
+    return flask_session.get("plan", "free")
+
+
+def get_daily_limit():
+    plan = get_plan()
+    if plan == "pro":
+        return None
+    if plan == "basic":
+        return PLANS["basic"]["clips_per_day"]
+    return FREE_CLIPS_PER_DAY
+
+
+def get_daily_used() -> int:
+    today = datetime.date.today().isoformat()
+    if flask_session.get("clip_date") != today:
+        flask_session["clip_date"] = today
+        flask_session["clip_count"] = 0
+    return flask_session.get("clip_count", 0)
+
+
+def consume_clips(n: int):
+    get_daily_used()  # ensure clip_date is initialised for today
+    flask_session["clip_count"] = flask_session.get("clip_count", 0) + n
 
 NICHES = {
     "1": "Tech & Startups",
@@ -184,7 +262,16 @@ def debug_ffmpeg():
 
 @app.route("/")
 def index():
-    return render_template("index.html", niches=NICHES)
+    limit = get_daily_limit()
+    used  = get_daily_used()
+    return render_template(
+        "index.html",
+        niches=NICHES,
+        plan=get_plan(),
+        daily_limit=limit,
+        daily_used=used,
+        daily_remaining=(limit - used) if limit is not None else None,
+    )
 
 
 @app.route("/process", methods=["POST"])
@@ -198,11 +285,31 @@ def process():
         count = int(request.form.get("count", "3"))
     except ValueError:
         count = 3
-    count = max(1, min(15, count))  # clamp to sane range
+    count = max(1, min(15, count))
 
     clip_length = request.form.get("clip_length", "medium").strip()
     if clip_length not in ("short", "medium", "long"):
         clip_length = "medium"
+
+    # Enforce daily clip limit
+    limit = get_daily_limit()
+    used  = get_daily_used()
+    if limit is not None:
+        remaining = limit - used
+        if remaining <= 0:
+            return jsonify({
+                "error": "limit_reached",
+                "message": (
+                    f"You've used all {limit} clips in your daily allowance "
+                    f"({'free' if get_plan() == 'free' else get_plan()} plan). "
+                    "Upgrade to generate more."
+                ),
+                "plan": get_plan(),
+                "limit": limit,
+            }), 429
+        count = min(count, remaining)
+
+    consume_clips(count)
 
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "running", "step": 0, "message": "Starting...", "clips": []}
@@ -324,6 +431,106 @@ def burn_status(burn_id):
     if not job:
         return jsonify({"error": "Burn job not found"}), 404
     return jsonify(job)
+
+
+@app.route("/pricing")
+def pricing():
+    return render_template(
+        "pricing.html",
+        plans=PLANS,
+        current_plan=get_plan(),
+        publishable_key=STRIPE_PUBLISHABLE_KEY,
+    )
+
+
+@app.route("/create-checkout-session", methods=["POST"])
+def create_checkout_session():
+    plan_key = request.form.get("plan", "")
+    if plan_key not in PLANS:
+        return redirect("/pricing")
+    plan = PLANS[plan_key]
+    try:
+        checkout = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": plan["amount"],
+                    "recurring": {"interval": "month"},
+                    "product_data": {
+                        "name": f"ClipAI {plan['name']}",
+                        "description": (
+                            f"{plan['clips_per_day']} clips/day"
+                            if plan["clips_per_day"] else "Unlimited clips/day"
+                        ),
+                    },
+                },
+                "quantity": 1,
+            }],
+            mode="subscription",
+            success_url=(
+                url_for("payment_success", _external=True)
+                + "?session_id={CHECKOUT_SESSION_ID}&plan=" + plan_key
+            ),
+            cancel_url=url_for("pricing", _external=True),
+        )
+        return redirect(checkout.url, code=303)
+    except stripe.StripeError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/payment/success")
+def payment_success():
+    session_id = request.args.get("session_id", "")
+    plan_key   = request.args.get("plan", "")
+    activated  = False
+    if session_id and plan_key in PLANS:
+        try:
+            checkout = stripe.checkout.Session.retrieve(session_id)
+            if checkout.payment_status == "paid":
+                flask_session["plan"] = plan_key
+                flask_session["subscription_id"] = checkout.subscription
+                flask_session["clip_count"] = 0  # reset count on upgrade
+                activated = True
+        except stripe.StripeError:
+            pass
+    return render_template(
+        "success.html",
+        plan=PLANS.get(plan_key, {}),
+        plan_key=plan_key,
+        activated=activated,
+    )
+
+
+@app.route("/payment/cancel")
+def payment_cancel():
+    return redirect(url_for("pricing"))
+
+
+@app.route("/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    payload    = request.get_data()
+    sig_header = request.headers.get("Stripe-Signature", "")
+    if not STRIPE_WEBHOOK_SECRET:
+        return "", 400
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except (ValueError, stripe.errors.SignatureVerificationError):
+        return "", 400
+    # subscription.deleted → sessions expire naturally (no server-side user DB)
+    return "", 200
+
+
+@app.route("/api/plan")
+def api_plan():
+    limit = get_daily_limit()
+    used  = get_daily_used()
+    return jsonify({
+        "plan": get_plan(),
+        "limit": limit,
+        "used": used,
+        "remaining": (limit - used) if limit is not None else None,
+    })
 
 
 if __name__ == "__main__":
