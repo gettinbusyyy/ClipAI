@@ -900,7 +900,7 @@
       if (clip.valid && clip.thumbnail) {
         previewHtml = `
           <div class="thumb-wrap" id="thumb-wrap-${i}" onclick="showPlayer(${i})">
-            <img src="/thumbnail/${encodeURIComponent(clip.thumbnail)}"
+            <img src="/thumbs/${encodeURIComponent(clip.thumbnail)}"
                  alt="${escHtml(clip.title)}" loading="lazy">
             <div class="play-overlay">
               <div class="play-btn" style="color:#312e81">${playIcon}</div>
@@ -919,7 +919,7 @@
                  src="${videoUrl}"></video>`;
       } else if (clip.thumbnail) {
         previewHtml = `<img class="clip-thumb"
-          src="/thumbnail/${encodeURIComponent(clip.thumbnail)}"
+          src="/thumbs/${encodeURIComponent(clip.thumbnail)}"
           alt="${escHtml(clip.title)}" loading="lazy">`;
       }
 

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}ClipAI{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0f14;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+    }
+    .site-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      border-bottom: 1px solid #1e2330;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .nav-brand-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .nav-brand h1 { font-size: 1.2rem; font-weight: 700; }
+    .nav-brand span { color: #8b5cf6; }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 0.85rem;
+    }
+    .nav-links a {
+      color: #94a3b8;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .nav-links a:hover { color: #e2e8f0; }
+    .nav-links a.active { color: #e2e8f0; font-weight: 600; }
+    .nav-links .nav-divider {
+      width: 1px; height: 16px;
+      background: #252a38;
+    }
+    .nav-links .nav-pill {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff;
+      border-radius: 99px;
+      padding: 4px 12px;
+      font-weight: 600;
+      font-size: 0.8rem;
+    }
+    .nav-links .nav-pill:hover { opacity: 0.88; color: #fff; }
+    .nav-email {
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #475569 !important;
+    }
+    .site-body { padding: 0; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<nav class="site-nav">
+  <a href="/" class="nav-brand">
+    <div class="nav-brand-icon">✂</div>
+    <h1>Clip<span>AI</span></h1>
+  </a>
+  <div class="nav-links">
+    <a href="/">Home</a>
+    <a href="{{ url_for('thumbnail.thumbnail_page') }}">Thumbnails</a>
+    <div class="nav-divider"></div>
+    {% if current_user and current_user.is_authenticated %}
+      <span class="nav-email" title="{{ current_user.email }}">{{ current_user.email }}</span>
+      <a href="/logout">Log out</a>
+    {% else %}
+      <a href="/login">Log in</a>
+      <a href="/signup" class="nav-pill">Sign up</a>
+    {% endif %}
+  </div>
+</nav>
+
+<div class="site-body">
+  {% block content %}{% endblock %}
+</div>
+
+</body>
+</html>

@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+{# If your base template uses a different block name than "content", change it here. #}
+{% block content %}
+
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+
+<style>
+  #tc-app{
+    --bg:#0E1116; --panel:#161A21; --panel-2:#1D222B; --line:#2A313C;
+    --ink:#EAEDF2; --muted:#8B94A3; --accent:#FF2E88; --accent-ink:#0E1116;
+    --radius:12px; --gap:16px;
+    background:var(--bg); color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    min-height:100vh; box-sizing:border-box; padding:20px;
+  }
+  #tc-app *{box-sizing:border-box;}
+  #tc-app h1{font-size:20px; font-weight:800; margin:0; letter-spacing:-.01em;}
+  #tc-app h1 span{color:var(--accent);}
+  #tc-app .sub{color:var(--muted); font-size:13px; margin:2px 0 0;}
+
+  /* top bar */
+  #tc-app .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:var(--gap); flex-wrap:wrap; margin-bottom:18px;
+  }
+  #tc-app .modes{display:flex; background:var(--panel); border:1px solid var(--line);
+    border-radius:999px; padding:4px; gap:4px;}
+  #tc-app .mode{appearance:none; border:0; background:transparent; color:var(--muted);
+    font:inherit; font-weight:600; font-size:13px; padding:8px 16px; border-radius:999px;
+    cursor:pointer;}
+  #tc-app .mode.active{background:var(--accent); color:var(--accent-ink);}
+
+  /* layout */
+  #tc-app .layout{display:grid; grid-template-columns:1fr 320px; gap:var(--gap); align-items:start;}
+  @media(max-width:880px){ #tc-app .layout{grid-template-columns:1fr;} }
+
+  /* stage */
+  #tc-app .stage{
+    background:
+      linear-gradient(45deg,#11151b 25%,transparent 25%),
+      linear-gradient(-45deg,#11151b 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#11151b 75%),
+      linear-gradient(-45deg,transparent 75%,#11151b 75%);
+    background-size:22px 22px; background-position:0 0,0 11px,11px -11px,-11px 0;
+    background-color:#0b0e12;
+    border:1px solid var(--line); border-radius:var(--radius);
+    min-height:420px; display:flex; align-items:center; justify-content:center;
+    padding:18px; position:relative; overflow:hidden;
+  }
+  #tc-app canvas{box-shadow:0 10px 40px rgba(0,0,0,.45); border-radius:4px; max-width:100%;}
+  #tc-app .empty{text-align:center; color:var(--muted); max-width:320px;}
+  #tc-app .empty .big{font-size:15px; color:var(--ink); font-weight:600; margin-bottom:6px;}
+
+  /* panels */
+  #tc-app .panel{background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius); padding:16px; margin-bottom:var(--gap);}
+  #tc-app .panel h2{font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--muted); margin:0 0 12px;}
+  #tc-app label.field{display:block; font-size:12px; color:var(--muted); margin:12px 0 5px;}
+  #tc-app label.field:first-of-type{margin-top:0;}
+
+  #tc-app select, #tc-app input[type=text]{
+    width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:9px 11px; font:inherit; font-size:14px;}
+  #tc-app input[type=range]{width:100%; accent-color:var(--accent);}
+  #tc-app input[type=color]{width:100%; height:34px; background:var(--panel-2);
+    border:1px solid var(--line); border-radius:8px; padding:3px; cursor:pointer;}
+  #tc-app .row{display:flex; gap:10px;}
+  #tc-app .row > *{flex:1; min-width:0;}
+
+  #tc-app .btn{appearance:none; border:1px solid var(--line); background:var(--panel-2);
+    color:var(--ink); font:inherit; font-weight:600; font-size:14px; padding:10px 14px;
+    border-radius:9px; cursor:pointer; width:100%; transition:border-color .15s,background .15s;}
+  #tc-app .btn:hover{border-color:var(--accent);}
+  #tc-app .btn:disabled{opacity:.45; cursor:not-allowed;}
+  #tc-app .btn.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  #tc-app .btn.ghost{background:transparent;}
+  #tc-app .btn.danger:hover{border-color:#ff5a5a; color:#ff8a8a;}
+
+  #tc-app .frames{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px;}
+  #tc-app .frames img{width:100%; aspect-ratio:9/16; object-fit:cover; border-radius:7px;
+    border:2px solid transparent; cursor:pointer; display:block;}
+  #tc-app .frames img:hover{border-color:var(--accent);}
+  #tc-app .frames .lab{font-size:10px; color:var(--muted); text-align:center; margin-top:3px;}
+
+  #tc-app .hint{font-size:11px; color:var(--muted); margin-top:8px; line-height:1.45;}
+  #tc-app .hidden{display:none !important;}
+  #tc-app .spinner{display:inline-block; width:13px; height:13px; border:2px solid currentColor;
+    border-right-color:transparent; border-radius:50%; animation:tc-spin .7s linear infinite;
+    vertical-align:-2px; margin-right:7px;}
+  @keyframes tc-spin{to{transform:rotate(360deg);}}
+</style>
+
+<div id="tc-app">
+  <div class="topbar">
+    <div>
+      <h1>Thumbnail <span>Studio</span></h1>
+      <p class="sub">Build a scroll-stopping cover from a clip frame or your own photo.</p>
+    </div>
+    <div style="display:flex; gap:12px; align-items:center;">
+      <div class="modes">
+        <button class="mode active" data-mode="clip">From a clip</button>
+        <button class="mode" data-mode="upload">Upload image</button>
+      </div>
+      <button id="tc-download" class="btn primary" style="width:auto;" disabled>Download PNG</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="stage">
+      <div id="tc-empty" class="empty">
+        <div class="big">No image yet</div>
+        Pick a clip and pull frames, or upload an image to start designing.
+      </div>
+      <canvas id="tc-canvas" class="hidden"></canvas>
+    </div>
+
+    <div class="controls">
+      <!-- SOURCE: from clip -->
+      <div class="panel" id="tc-src-clip">
+        <h2>Source · clip frame</h2>
+        <label class="field" for="tc-clip-select">Choose a clip</label>
+        <select id="tc-clip-select"><option value="">Loading clips…</option></select>
+        <div class="row" style="margin-top:12px;">
+          <button class="btn" id="tc-get-frames">Get frames</button>
+        </div>
+        <div class="frames hidden" id="tc-frames"></div>
+        <p class="hint" id="tc-clip-hint"></p>
+      </div>
+
+      <!-- SOURCE: upload -->
+      <div class="panel hidden" id="tc-src-upload">
+        <h2>Source · upload</h2>
+        <button class="btn" id="tc-upload-btn">Choose image…</button>
+        <input type="file" id="tc-file" accept="image/*" class="hidden">
+        <p class="hint">PNG or JPG from your device. Best results at 1080px or larger.</p>
+      </div>
+
+      <!-- TEXT -->
+      <div class="panel hidden" id="tc-text-panel">
+        <h2>Text</h2>
+        <button class="btn primary" id="tc-add-text">+ Add text</button>
+
+        <div id="tc-text-edit" class="hidden">
+          <label class="field" for="tc-text-input">Text</label>
+          <input type="text" id="tc-text-input" placeholder="YOUR TEXT">
+
+          <label class="field" for="tc-font">Font</label>
+          <select id="tc-font">
+            <option value="Anton">Anton (impact)</option>
+            <option value="Archivo Black">Archivo Black</option>
+            <option value="Inter">Inter (clean)</option>
+          </select>
+
+          <label class="field">Size</label>
+          <input type="range" id="tc-size" min="20" max="260" value="90">
+
+          <div class="row">
+            <div>
+              <label class="field">Fill</label>
+              <input type="color" id="tc-fill" value="#ffffff">
+            </div>
+            <div>
+              <label class="field">Outline</label>
+              <input type="color" id="tc-stroke" value="#000000">
+            </div>
+          </div>
+
+          <label class="field">Outline thickness</label>
+          <input type="range" id="tc-stroke-w" min="0" max="24" value="6">
+
+          <button class="btn ghost danger" id="tc-del-text" style="margin-top:14px;">Delete this text</button>
+        </div>
+        <p class="hint">Drag to move, drag a corner to resize. Click a layer to edit it.</p>
+      </div>
+
+      <!-- BACKGROUND -->
+      <div class="panel hidden" id="tc-bg-panel">
+        <h2>Background</h2>
+        <button class="btn" id="tc-remove-bg">Remove background</button>
+        <label class="field" style="margin-top:14px;">Backdrop color</label>
+        <div class="row">
+          <input type="color" id="tc-backdrop" value="#111318">
+          <button class="btn ghost" id="tc-backdrop-clear" style="flex:0 0 auto; width:auto;">Clear</button>
+        </div>
+        <p class="hint">Removing the background isolates the subject (tuned for people). Set a backdrop color behind the cutout, or leave it transparent.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const MAX_SIDE = 1080;           // export resolution cap on the long edge
+  const stage = document.getElementById('tc-app');
+  const emptyEl = document.getElementById('tc-empty');
+  const canvasEl = document.getElementById('tc-canvas');
+  const downloadBtn = document.getElementById('tc-download');
+
+  let canvas = null;       // fabric canvas
+  let bgImage = null;      // fabric image of the photo / cutout
+  let bgRect = null;       // optional solid backdrop behind the photo
+  let srcDataUrl = null;   // original loaded image source (for bg removal)
+
+  // ---------- mode switching ----------
+  document.querySelectorAll('.mode').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.mode').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      const m = btn.dataset.mode;
+      document.getElementById('tc-src-clip').classList.toggle('hidden', m!=='clip');
+      document.getElementById('tc-src-upload').classList.toggle('hidden', m!=='upload');
+    });
+  });
+
+  // ---------- clip listing ----------
+  const clipSelect = document.getElementById('tc-clip-select');
+  fetch('/thumbnail/clips').then(r=>r.json()).then(data=>{
+    const clips = (data && data.clips) || [];
+    if(!clips.length){
+      clipSelect.innerHTML = '<option value="">No clips found</option>';
+      document.getElementById('tc-clip-hint').textContent =
+        'No clips in your output folder yet — generate a clip first, or switch to Upload image.';
+      return;
+    }
+    clipSelect.innerHTML = clips.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');
+  }).catch(()=>{ clipSelect.innerHTML = '<option value="">Could not load clips</option>'; });
+
+  // ---------- get frames ----------
+  const framesEl = document.getElementById('tc-frames');
+  const getFramesBtn = document.getElementById('tc-get-frames');
+  getFramesBtn.addEventListener('click', ()=>{
+    const clip = clipSelect.value;
+    if(!clip) return;
+    getFramesBtn.disabled = true;
+    getFramesBtn.innerHTML = '<span class="spinner"></span>Extracting…';
+    fetch('/thumbnail/extract-frames', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({clip, count:6})
+    }).then(r=>r.json()).then(data=>{
+      if(data.error){ alert(data.error); return; }
+      framesEl.innerHTML = data.frames.map((f,i)=>
+        `<div><img src="${f.image}" data-i="${i}" alt="frame ${f.label}"><div class="lab">${f.label}</div></div>`
+      ).join('');
+      framesEl.classList.remove('hidden');
+      framesEl.querySelectorAll('img').forEach(img=>{
+        img.addEventListener('click', ()=> loadImage(img.src));
+      });
+    }).catch(()=>alert('Could not extract frames.'))
+      .finally(()=>{ getFramesBtn.disabled=false; getFramesBtn.textContent='Get frames'; });
+  });
+
+  // ---------- upload ----------
+  document.getElementById('tc-upload-btn').addEventListener('click', ()=>document.getElementById('tc-file').click());
+  document.getElementById('tc-file').addEventListener('change', e=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=> loadImage(reader.result);
+    reader.readAsDataURL(file);
+  });
+
+  // ---------- load an image into the editor ----------
+  function loadImage(url){
+    srcDataUrl = url;
+    fabric.Image.fromURL(url, img=>{
+      let w = img.width, h = img.height;
+      const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
+      const cw = Math.round(w*scale), ch = Math.round(h*scale);
+
+      if(!canvas){
+        canvasEl.classList.remove('hidden');
+        emptyEl.classList.add('hidden');
+        canvas = new fabric.Canvas('tc-canvas', {preserveObjectStacking:true, backgroundColor:null});
+        bindSelection();
+      } else {
+        canvas.clear();
+        bgRect = null;
+      }
+      canvas.setDimensions({width:cw, height:ch});
+
+      img.set({selectable:false, evented:false, hoverCursor:'default'});
+      img.scaleToWidth(cw);
+      bgImage = img;
+      canvas.add(bgImage);
+      restack();
+      fitDisplay();
+      canvas.renderAll();
+
+      downloadBtn.disabled = false;
+      document.getElementById('tc-text-panel').classList.remove('hidden');
+      document.getElementById('tc-bg-panel').classList.remove('hidden');
+    }, {crossOrigin:'anonymous'});
+  }
+
+  // keep backdrop at bottom, photo above it, text on top
+  function restack(){
+    if(bgRect) canvas.moveTo(bgRect, 0);
+    if(bgImage) canvas.moveTo(bgImage, bgRect ? 1 : 0);
+  }
+
+  // scale the canvas visually to fit the stage without changing export resolution
+  function fitDisplay(){
+    if(!canvas) return;
+    const stageW = canvasEl.parentElement.clientWidth - 36; // minus padding
+    const designW = canvas.getWidth(), designH = canvas.getHeight();
+    const cssW = Math.min(designW, stageW);
+    const cssH = cssW * (designH/designW);
+    canvas.setDimensions({width:cssW+'px', height:cssH+'px'}, {cssOnly:true});
+  }
+  window.addEventListener('resize', fitDisplay);
+
+  // ---------- text ----------
+  const textEdit = document.getElementById('tc-text-edit');
+  const tIn = document.getElementById('tc-text-input');
+  const tFont = document.getElementById('tc-font');
+  const tSize = document.getElementById('tc-size');
+  const tFill = document.getElementById('tc-fill');
+  const tStroke = document.getElementById('tc-stroke');
+  const tStrokeW = document.getElementById('tc-stroke-w');
+
+  document.getElementById('tc-add-text').addEventListener('click', ()=>{
+    if(!canvas) return;
+    const fs = Math.round(canvas.getHeight()*0.10);
+    const t = new fabric.Textbox('YOUR TEXT', {
+      left: canvas.getWidth()/2, top: canvas.getHeight()*0.78,
+      originX:'center', originY:'center',
+      width: canvas.getWidth()*0.9, textAlign:'center',
+      fontFamily:'Anton', fontWeight:'normal', fontSize:fs,
+      fill:'#ffffff', stroke:'#000000', strokeWidth:6,
+      paintFirst:'stroke', strokeLineJoin:'round', strokeLineCap:'round',
+    });
+    canvas.add(t); canvas.setActiveObject(t); canvas.renderAll();
+    syncControls(t);
+  });
+
+  function activeText(){
+    const o = canvas && canvas.getActiveObject();
+    return (o && o.type==='textbox') ? o : null;
+  }
+  function syncControls(t){
+    textEdit.classList.remove('hidden');
+    tIn.value = t.text;
+    tFont.value = t.fontFamily;
+    tSize.value = Math.round(t.fontSize);
+    tFill.value = t.fill;
+    tStroke.value = t.stroke || '#000000';
+    tStrokeW.value = Math.round(t.strokeWidth || 0);
+  }
+  function bindSelection(){
+    canvas.on('selection:created', e=>{ const t=activeText(); if(t) syncControls(t); });
+    canvas.on('selection:updated', e=>{ const t=activeText(); if(t) syncControls(t); });
+    canvas.on('selection:cleared', ()=> textEdit.classList.add('hidden'));
+  }
+  function applyToText(fn){ const t=activeText(); if(!t) return; fn(t); canvas.renderAll(); }
+
+  tIn.addEventListener('input', ()=>applyToText(t=>t.set('text', tIn.value)));
+  tFont.addEventListener('change', ()=>applyToText(t=>t.set('fontFamily', tFont.value)));
+  tSize.addEventListener('input', ()=>applyToText(t=>t.set('fontSize', parseInt(tSize.value,10))));
+  tFill.addEventListener('input', ()=>applyToText(t=>t.set('fill', tFill.value)));
+  tStroke.addEventListener('input', ()=>applyToText(t=>t.set('stroke', tStroke.value)));
+  tStrokeW.addEventListener('input', ()=>applyToText(t=>t.set('strokeWidth', parseInt(tStrokeW.value,10))));
+  document.getElementById('tc-del-text').addEventListener('click', ()=>{
+    const t=activeText(); if(!t) return;
+    canvas.remove(t); canvas.discardActiveObject(); canvas.renderAll();
+    textEdit.classList.add('hidden');
+  });
+
+  // ---------- background ----------
+  const removeBgBtn = document.getElementById('tc-remove-bg');
+  removeBgBtn.addEventListener('click', ()=>{
+    if(!srcDataUrl) return;
+    removeBgBtn.disabled = true;
+    removeBgBtn.innerHTML = '<span class="spinner"></span>Removing…';
+    fetch('/thumbnail/remove-bg', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image: srcDataUrl})
+    }).then(r=>r.json()).then(data=>{
+      if(data.error){ alert(data.error); return; }
+      bgImage.setSrc(data.image, ()=>{
+        bgImage.scaleToWidth(canvas.getWidth());
+        srcDataUrl = data.image;
+        restack(); canvas.renderAll();
+      }, {crossOrigin:'anonymous'});
+    }).catch(()=>alert('Background removal failed.'))
+      .finally(()=>{ removeBgBtn.disabled=false; removeBgBtn.textContent='Remove background'; });
+  });
+
+  const backdrop = document.getElementById('tc-backdrop');
+  backdrop.addEventListener('input', ()=> setBackdrop(backdrop.value));
+  document.getElementById('tc-backdrop-clear').addEventListener('click', ()=>{
+    if(bgRect){ canvas.remove(bgRect); bgRect=null; canvas.renderAll(); }
+  });
+  function setBackdrop(color){
+    if(!canvas) return;
+    if(!bgRect){
+      bgRect = new fabric.Rect({
+        left:0, top:0, width:canvas.getWidth(), height:canvas.getHeight(),
+        fill:color, selectable:false, evented:false, hoverCursor:'default',
+      });
+      canvas.add(bgRect);
+    } else {
+      bgRect.set('fill', color);
+    }
+    restack(); canvas.renderAll();
+  }
+
+  // ---------- export ----------
+  downloadBtn.addEventListener('click', ()=>{
+    if(!canvas) return;
+    canvas.discardActiveObject(); canvas.renderAll();
+    const dataUrl = canvas.toDataURL({format:'png', multiplier:1});
+    const a = document.createElement('a');
+    a.href = dataUrl; a.download = 'clipai-thumbnail.png';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+})();
+</script>
+{% endblock %}

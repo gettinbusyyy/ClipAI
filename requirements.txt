@@ -9,3 +9,5 @@ bgutil-ytdlp-pot-provider
 Pillow==12.2.0
 python-dotenv==1.2.2
 gunicorn==26.0.0
+rembg==2.0.59
+onnxruntime==1.17.3

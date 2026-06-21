@@ -26,6 +26,8 @@ from flask import (
 )
 
 app = Flask(__name__)
+
+from thumbnail_routes import thumbnail_bp  # noqa: E402 (import after app creation)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=90)
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(BASE_DIR, 'clipai.db')}"
@@ -97,6 +99,8 @@ class User(UserMixin, db.Model):
 def load_user(user_id: str):
     return db.session.get(User, int(user_id))
 
+
+app.register_blueprint(thumbnail_bp)
 
 with app.app_context():
     db.create_all()
@@ -399,8 +403,8 @@ def download(filename):
     )
 
 
-@app.route("/thumbnail/<path:filename>")
-def thumbnail(filename):
+@app.route("/thumbs/<path:filename>")
+def serve_thumbnail(filename):
     return send_from_directory(os.path.join(BASE_DIR, "output_clips"), filename)
 
 
