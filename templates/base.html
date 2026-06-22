@@ -83,15 +83,7 @@
   </a>
   <div class="nav-links">
     <a href="/">Home</a>
-    <a href="{{ url_for('thumbnail.thumbnail_page') }}">Thumbnails</a>
-    <div class="nav-divider"></div>
-    {% if current_user and current_user.is_authenticated %}
-      <span class="nav-email" title="{{ current_user.email }}">{{ current_user.email }}</span>
-      <a href="/logout">Log out</a>
-    {% else %}
-      <a href="/login">Log in</a>
-      <a href="/signup" class="nav-pill">Sign up</a>
-    {% endif %}
+    {% include '_navbar_links.html' %}
   </div>
 </nav>
 

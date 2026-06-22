@@ -23,8 +23,16 @@
     .logo {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
       margin-bottom: 40px;
+    }
+    .logo-nav {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 0.82rem;
+      flex-wrap: wrap;
     }
     .logo-icon {
       width: 36px; height: 36px;
@@ -170,12 +178,13 @@
 <div class="container">
 
   <div class="logo">
-    <a href="/">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <div class="logo-icon">✂</div>
-        <h1>Clip<span>AI</span></h1>
-      </div>
+    <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit">
+      <div class="logo-icon">✂</div>
+      <h1>Clip<span>AI</span></h1>
     </a>
+    <div class="logo-nav">
+      {% include '_navbar_links.html' %}
+    </div>
   </div>
 
   <p class="page-title">Simple, transparent pricing</p>

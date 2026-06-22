@@ -644,17 +644,7 @@
       {% else %}
         <span style="color:#a5b4fc">Pro &middot; Unlimited</span>
       {% endif %}
-      {% if plan != "pro" %}
-        <a href="/pricing" style="color:#6366f1;text-decoration:none;font-weight:600">Upgrade</a>
-      {% endif %}
-      {% if current_user.is_authenticated %}
-        <span style="color:#475569;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-              title="{{ current_user.email }}">{{ current_user.email }}</span>
-        <a href="/logout" style="color:#64748b;text-decoration:none">Log out</a>
-      {% else %}
-        <a href="/login"  style="color:#94a3b8;text-decoration:none">Log in</a>
-        <a href="/signup" style="color:#6366f1;text-decoration:none;font-weight:600">Sign up</a>
-      {% endif %}
+      {% include '_navbar_links.html' %}
     </div>
   </div>
 
