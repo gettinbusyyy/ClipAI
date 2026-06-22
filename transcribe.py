@@ -9,6 +9,9 @@ import yt_dlp
 import assemblyai as aai
 load_dotenv()
 
+_BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+COOKIES_DIR = os.environ.get("COOKIES_DIR", os.path.join(_BASE_DIR, "cookies"))
+
 _NIX_BINS = [
     "/nix/var/nix/profiles/default/bin",
     "/root/.nix-profile/bin",
@@ -108,6 +111,14 @@ def _write_cookies_file() -> "str | None":
             except Exception:
                 pass  # Not base64 — use raw value as-is
         print(f"[cookies] loaded from YOUTUBE_COOKIES ({len(raw)} chars)")
+
+    if not raw:
+        cookie_file = os.path.join(COOKIES_DIR, "cookies.txt")
+        if os.path.isfile(cookie_file):
+            with open(cookie_file, "r", encoding="utf-8") as _cf:
+                raw = _cf.read().strip()
+            if raw:
+                print(f"[cookies] loaded from {cookie_file} ({len(raw)} chars)")
 
     if not raw:
         print("[cookies] no cookies configured — proceeding unauthenticated")

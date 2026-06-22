@@ -16,9 +16,16 @@ from flask_login import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+CLIPS_DIR   = os.environ.get("CLIPS_DIR",   os.path.join(BASE_DIR, "output_clips"))
+COOKIES_DIR = os.environ.get("COOKIES_DIR", os.path.join(BASE_DIR, "cookies"))
+DB_DIR      = os.environ.get("DB_DIR",      BASE_DIR)
+
 os.chdir(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
+
+for _d in (CLIPS_DIR, COOKIES_DIR, DB_DIR):
+    os.makedirs(_d, exist_ok=True)
 
 from flask import (
     Flask, render_template, request, jsonify,
@@ -30,7 +37,7 @@ app = Flask(__name__)
 from thumbnail_routes import thumbnail_bp  # noqa: E402 (import after app creation)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=90)
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(BASE_DIR, 'clipai.db')}"
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(DB_DIR, 'clipai.db')}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
@@ -222,10 +229,10 @@ def run_pipeline(job_id: str, url: str, niche: str, count: int = 3, clip_length:
 
         update(3, "Downloading video from YouTube...")
         from clipper import download_video, cut_clip, load_transcript_words, generate_srt, burn_captions, generate_thumbnail
-        os.makedirs("output_clips", exist_ok=True)
+        os.makedirs(CLIPS_DIR, exist_ok=True)
         video_path = download_video(url)
         words = load_transcript_words("transcript.txt")
-        clip_dir = os.path.abspath("output_clips")
+        clip_dir = CLIPS_DIR
 
         clip_files = []
         for i, clip in enumerate(clips):
@@ -235,11 +242,11 @@ def run_pipeline(job_id: str, url: str, niche: str, count: int = 3, clip_length:
                 for c in clip.get("title", f"clip_{i+1}")
             )[:30]
             filename = f"clip_{i + 1}_{safe_title}.mp4"
-            output_path = os.path.join("output_clips", filename)
+            output_path = os.path.join(CLIPS_DIR, filename)
             raw_filename = f"raw_{i + 1}_{safe_title}.mp4"
-            raw_path = os.path.join("output_clips", raw_filename)
+            raw_path = os.path.join(CLIPS_DIR, raw_filename)
             srt_filename = f"{i + 1}_{safe_title}.srt"
-            srt_path = os.path.join("output_clips", srt_filename)
+            srt_path = os.path.join(CLIPS_DIR, srt_filename)
             corrupt_reason = None
             srt_content = ""
             thumb_filename = None
@@ -263,7 +270,7 @@ def run_pipeline(job_id: str, url: str, niche: str, count: int = 3, clip_length:
                     generate_thumbnail(
                         output_path,
                         clip.get("title", ""),
-                        os.path.join("output_clips", thumb_base),
+                        os.path.join(CLIPS_DIR, thumb_base),
                     )
                     thumb_filename = thumb_base
                 except Exception:
@@ -396,23 +403,17 @@ def status(job_id):
 
 @app.route("/download/<path:filename>")
 def download(filename):
-    return send_from_directory(
-        os.path.join(BASE_DIR, "output_clips"),
-        filename,
-        as_attachment=True,
-    )
+    return send_from_directory(CLIPS_DIR, filename, as_attachment=True)
 
 
 @app.route("/thumbs/<path:filename>")
 def serve_thumbnail(filename):
-    return send_from_directory(os.path.join(BASE_DIR, "output_clips"), filename)
+    return send_from_directory(CLIPS_DIR, filename)
 
 
 @app.route("/stream/<path:filename>")
 def stream_clip(filename):
-    # Served without as_attachment so the browser can play it inline.
-    # Flask's send_file supports HTTP range requests, enabling video seeking.
-    return send_from_directory(os.path.join(BASE_DIR, "output_clips"), filename)
+    return send_from_directory(CLIPS_DIR, filename)
 
 
 def do_burn(burn_id, job_id, clip_index, clip_info, srt_content):
@@ -424,12 +425,12 @@ def do_burn(burn_id, job_id, clip_index, clip_info, srt_content):
         start_time = clip_info["start_time"]
         end_time   = clip_info["end_time"]
         base       = os.path.splitext(filename)[0]
-        clip_dir   = os.path.abspath("output_clips")
+        clip_dir   = CLIPS_DIR
 
         raw_filename = f"reburn_raw_{base}.mp4"
         srt_filename = f"reburn_{base}.srt"
-        raw_path = os.path.join("output_clips", raw_filename)
-        srt_path = os.path.join("output_clips", srt_filename)
+        raw_path = os.path.join(CLIPS_DIR, raw_filename)
+        srt_path = os.path.join(CLIPS_DIR, srt_filename)
 
         burn_jobs[burn_id]["message"] = "Re-cutting clip..."
         cut_clip("full_video.mp4", start_time, end_time, raw_path)

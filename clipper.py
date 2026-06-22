@@ -10,8 +10,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+_BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+CLIPS_DIR   = os.environ.get("CLIPS_DIR",   os.path.join(_BASE_DIR, "output_clips"))
+COOKIES_DIR = os.environ.get("COOKIES_DIR", os.path.join(_BASE_DIR, "cookies"))
+
 CLIPS_FILE = "clips.json"
-OUTPUT_DIR = "output_clips"
 
 _NIX_BINS = [
     "/nix/var/nix/profiles/default/bin",
@@ -99,6 +102,14 @@ def _write_cookies_file() -> "str | None":
             except Exception:
                 pass  # Not base64 — use raw value as-is
         print(f"[cookies] loaded from YOUTUBE_COOKIES ({len(raw)} chars)")
+
+    if not raw:
+        cookie_file = os.path.join(COOKIES_DIR, "cookies.txt")
+        if os.path.isfile(cookie_file):
+            with open(cookie_file, "r", encoding="utf-8") as _cf:
+                raw = _cf.read().strip()
+            if raw:
+                print(f"[cookies] loaded from {cookie_file} ({len(raw)} chars)")
 
     if not raw:
         print("[cookies] no cookies configured — proceeding unauthenticated")
@@ -425,18 +436,18 @@ def main():
     parser.add_argument("url", help="YouTube URL")
     args = parser.parse_args()
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(CLIPS_DIR, exist_ok=True)
 
     video_path = download_video(args.url)
     clips = load_clips()
 
     for i, clip in enumerate(clips):
-        output_path = os.path.join(OUTPUT_DIR, f"clip_{i+1}_{clip['title'].replace(' ', '_')[:30]}.mp4")
+        output_path = os.path.join(CLIPS_DIR, f"clip_{i+1}_{clip['title'].replace(' ', '_')[:30]}.mp4")
         print(f"\nCutting clip {i+1}: {clip['title']}")
         print(f"Score: {clip.get('score', 'N/A')} | Hook: {clip.get('hook', 'N/A')}")
         cut_clip(video_path, clip["start_time"], clip["end_time"], output_path)
 
-    print(f"\nDone! {len(clips)} clips saved to /{OUTPUT_DIR}")
+    print(f"\nDone! {len(clips)} clips saved to {CLIPS_DIR}")
 
 if __name__ == "__main__":
     main()
