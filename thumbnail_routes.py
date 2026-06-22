@@ -23,6 +23,7 @@ import base64
 import shutil
 import subprocess
 import tempfile
+import traceback
 from pathlib import Path
 
 from flask import Blueprint, render_template, request, jsonify, current_app
@@ -201,11 +202,13 @@ def remove_bg():
         from rembg import remove
         session = _get_rembg_session()
         output_bytes = remove(input_bytes, session=session)
-    except ModuleNotFoundError:
-        return jsonify({"error": "Background removal not installed on server"}), 500
     except Exception as e:
-        current_app.logger.exception("rembg failed")
-        return jsonify({"error": f"Background removal failed: {e}"}), 500
+        tb = traceback.format_exc()
+        current_app.logger.error("rembg failed — %s: %s\n%s", type(e).__name__, e, tb)
+        return jsonify({
+            "error": f"{type(e).__name__}: {e}",
+            "traceback": tb,
+        }), 500
 
     out_b64 = base64.b64encode(output_bytes).decode("ascii")
     return jsonify({"image": f"data:image/png;base64,{out_b64}"})
