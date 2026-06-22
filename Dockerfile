@@ -19,7 +19,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir rembg==2.0.59 onnxruntime==1.17.3
+    pip install --no-cache-dir "numpy<2" rembg==2.0.59 onnxruntime==1.17.3
 
 COPY . .
 
